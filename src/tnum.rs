@@ -1,4 +1,9 @@
+//! This is a tnum implementation for Solana eBPF
+
+// This is for bit-level abstraction
+
 #[derive(Debug, Clone, Copy)]
+/// tnum definition
 pub struct Tnum {
     value: u64,
     mask: u64,
@@ -16,6 +21,7 @@ pub fn tnum_const(value: u64) -> Tnum {
     Tnum::new(value, 0)
 }
 
+/// from integer interval to tnum
 pub fn tnum_range(min: u64, max: u64) -> Tnum {
     let chi = min ^ max;
     //最高未知位
@@ -123,19 +129,6 @@ pub fn tnum_xor(a: Tnum, b: Tnum) -> Tnum {
 
 /// tnum 的乘法操作
 pub fn tnum_mul(mut a: Tnum, mut b: Tnum) -> Tnum {
-    /// 如果一个是常数
-    if a.mask == 0 || b.mask == 0 {
-        if a.mask == 0 && a.value.count_ones() == 1 {
-            // a 是常数且是2的幂
-            return tnum_lshift(b, a.value.trailing_zeros() as u8);
-        } else if b.mask == 0 && b.value.count_ones() == 1 {
-            // b 是常数且是2的幂
-            return tnum_lshift(a, b.value.trailing_zeros() as u8);
-        } else {
-            return Tnum::new(a.value * b.value, a.mask * b.mask);
-        }
-    }
-
     let acc_v = a.value * b.value;
     let mut acc_m: Tnum = Tnum::new(0, 0);
     while (a.value != 0) || (a.mask != 0) {
@@ -148,6 +141,79 @@ pub fn tnum_mul(mut a: Tnum, mut b: Tnum) -> Tnum {
         b = tnum_lshift(b, 1);
     }
     tnum_add(Tnum::new(acc_v, 0), acc_m)
+}
+
+/// A constant-value optimization for tnum_mul
+pub fn tnum_mul_opt(a: Tnum, b: Tnum) -> Tnum {
+    // 如果一个是常数
+    if a.mask == 0 {
+        if a.value.count_ones() == 1 { // 2 ^ x
+            return tnum_lshift(b, a.value.trailing_zeros() as u8);
+        }
+        else {
+            return Tnum::new(a.value * b.value, a.value * b.mask); // TODO: this is wrong
+        }
+    } else if b.mask == 0 {
+        if b.value.count_ones() == 1 { // 2 ^ x
+            return tnum_lshift(a, b.value.trailing_zeros() as u8);
+        }
+        else {
+            return Tnum::new(a.value * b.value, b.value * a.mask); // TODO: this is wrong, see the test
+            /* assume a = (100, 011), corresponds to 0b1uu
+               assume b = (111, 000), corresponds to 0b111
+             */
+        }
+    } else {
+        tnum_mul(a, b)
+    }
+}
+
+#[test]
+fn test_tnum_mul () -> (){
+    let a = Tnum::new(0b100, 0b011);
+    let b = Tnum::new(0b111, 0b000);
+    println!("{:?}", tnum_mul(a, b));
+    println!("{:?}", tnum_mul_opt(a, b));
+}
+
+/// aux function for tnum_mul_rec
+fn tnum_decompose (a: Tnum) -> (Tnum, Tnum) {
+    (
+        Tnum::new(a.value >> 1, a.mask >> 1),
+        Tnum::new(a.value & 1, a.mask & 1)
+    )
+}
+
+/// A new tnum_mul proposed by frederic
+pub fn tnum_mul_rec(a: Tnum, b: Tnum) -> Tnum {
+    if a.mask == 0 && b.mask == 0 {  // both are known
+        Tnum::new(a.value * b.value, 0)
+    } else if a.mask == u64::MAX && b.mask == u64::MAX { //both are unknown
+        Tnum::new(0,u64::MAX)
+    } else if (a.value == 0 && a.mask == 0) || (b.value == 0 && b.mask == 0) { // mult by 0
+        Tnum::new(0, 0)
+    } else if a.value == 1 && a.mask == 0 { // mult by 1
+        b
+    } else if b.value == 1 && b.mask == 0 { // mult by 1
+        a
+    } else {
+        let (a_up,a_low) = tnum_decompose(a);
+        let (b_up,b_low) = tnum_decompose(b);
+        tnum_mul_rec(a_up, b_up)
+        //tnum_mul_rec(a_up, b_up) + tnum_mul_rec(a_up, b_low) + tnum_mul_rec(a_low, b_up) + tnum_mul_rec(a_low, b_low)
+        // TODO: this one is wrong, replace this line with the following impl
+        /* decompose the mask of am && bm
+        so that the last bits either 0s or 1s
+        In assembly, finding the rightmost 1 or 0 of a number is fast
+
+        let (a_up,a_low) = decompose a in
+        let (b_up,b_low) = decompose b in
+        // a_low and b_low are either 1s or 0s
+        (mul a_up b_up) + (mul a_up b_low) +
+        (mul a_low b_up) + (mul a_low b_low)
+        */
+    }
+
 }
 
 /// tnum 的交集计算
@@ -182,7 +248,7 @@ pub fn tnum_in(a: Tnum, mut b: Tnum) -> bool {
     }
 }
 
-// tnum转换为字符串
+/// tnum转换为字符串
 pub fn tnum_sbin(size: usize, mut a: Tnum) -> String {
     let mut result = vec![0u8; size];
 

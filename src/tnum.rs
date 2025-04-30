@@ -147,14 +147,14 @@ pub fn tnum_mul(mut a: Tnum, mut b: Tnum) -> Tnum {
 pub fn tnum_mul_opt(a: Tnum, b: Tnum) -> Tnum {
     // 如果一个是常数
     if a.mask == 0 {
-        if a.value.count_ones() == 1 { // 2 ^ x
+        if a.value.count_ones() == 1 { // a.value = 2 ^ x
             return tnum_lshift(b, a.value.trailing_zeros() as u8);
         }
         else {
             return Tnum::new(a.value * b.value, a.value * b.mask); // TODO: this is wrong
         }
     } else if b.mask == 0 {
-        if b.value.count_ones() == 1 { // 2 ^ x
+        if b.value.count_ones() == 1 { // a.value = 2 ^ x
             return tnum_lshift(a, b.value.trailing_zeros() as u8);
         }
         else {
@@ -175,6 +175,68 @@ fn test_tnum_mul () -> (){
     println!("{:?}", tnum_mul(a, b));
     println!("{:?}", tnum_mul_opt(a, b));
 }
+
+
+///computes the join of the tnum domain.
+pub fn tnum_join (a: Tnum, b: Tnum) -> Tnum {
+    let v = a.value ^ b.value;
+    let m = (a.mask | b.mask) | v;
+        Tnum::new((a.value | b.value) & (!m), m)
+}
+
+/// [split_at_mu] splits a tnum at the first unknow.
+fn split_at_mu (x:Tnum) -> (Tnum, u32 , Tnum) {
+    let i = x.mask.leading_ones();
+    let x1 = Tnum::new(x.value >> (i+1), x.mask >> (i+1));
+    let x2 = Tnum::new(x.value & ((1 << i) - 1), x.mask & ((1 << i) - 1));
+        (x1,i,x2)
+}
+
+/// [tnum_mul_const] multiplies a constant [c] by the tnum [x]
+/// which has [j] unknown bits and [n] is the fuel (Z.of_nat n = j).
+fn tnum_mul_const (c:u64, x:Tnum, n:u64) -> Tnum {
+    if n == 0 {
+        Tnum::new(c * x.value, 0)
+    } else {
+        let (y1,i1,y2) = split_at_mu(x);
+        let p = tnum_mul_const(c,y1,n-1);
+        let mc = Tnum::new(c * y2.mask,0);
+        let mu0 = tnum_add(tnum_lshift(p, (i1+1) as u8), mc);
+        let mu1 = tnum_add(mu0, Tnum::new(c<<i1,0));
+           tnum_join(mu0, mu1)
+    }
+
+}
+
+/// [xtnum_mul x i y j n] computes the multiplication of
+/// [x]  which has [i] unknown bits by
+/// [y]  which has [j] unknown bits such (i <= j) and
+/// the fuel n = i + j
+pub fn xtnum_mul (x:Tnum, i: u64, y:Tnum, j: u64, n: u64) -> Tnum {
+    if n == 0 {
+        Tnum::new(x.value * y.value, 0)
+    } else {
+        let (y1,i1,y2) = split_at_mu(y); // y = y1.mu.y2
+        let p = if i == j {
+            xtnum_mul(y1, j-1, x, i, n-1)
+        } else {
+            xtnum_mul(x, i, y1, j-1, n-1)
+        };
+        let mc = tnum_mul_const(y2.value, x, i);
+        let mu0 = tnum_add(tnum_lshift(p, (i1+1) as u8), mc);
+        let mu1 = tnum_add(mu0, tnum_lshift(x, i1 as u8));
+            tnum_join(mu0, mu1)
+    }
+}
+
+#[test]
+fn test_xtnum_mul () -> (){
+    let a = Tnum::new(15, 0); // 2^4 - 1
+    let b = Tnum::new(0, 31); // 2^5 - 1
+    println!("{:?}", tnum_mul(a, b)); // Output: Tnum { value: 0, mask: 511 } 2^(4+5) -1
+    println!("{:?}", xtnum_mul(a, 0, b, 5, 5)); // Output: Tnum { value: 0, mask: 4095 }
+}
+
 
 /// aux function for tnum_mul_rec
 fn tnum_decompose (a: Tnum) -> (Tnum, Tnum) {

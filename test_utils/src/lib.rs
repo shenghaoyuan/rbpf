@@ -466,3 +466,4 @@ macro_rules! test_interpreter_and_jit_elf {
         test_interpreter_and_jit_elf!($source, config, $mem, ($($syscall_name => $syscall_function),*), $context_object, $expected_result);
     };
 }
+

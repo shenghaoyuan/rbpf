@@ -370,11 +370,8 @@ pub fn tnum_is_aligned(a: Tnum, size: u64) -> bool {
     }
 }
 
-/// check if [b] is a subset of [a], that is
-/// 1) for unknown bits: all bit-set in [b.mask] must exist in [a.mask]
-/// 2) for known bits: all bit-set in [b.value] must exist in [a.value]
+
 pub fn tnum_in(a: Tnum, b: Tnum) -> bool {
-    // if we find one bit-set in [b.mask] but not in [a.mask], return false
     if (b.mask & !a.mask) != 0 {
         return false;
     } else {
@@ -383,11 +380,15 @@ pub fn tnum_in(a: Tnum, b: Tnum) -> bool {
     }
 }
 
+/// check if [b] is a subset of [a], that is
+/// 1) for unknown bits: all bit-set in [b.mask] must exist in [a.mask]
+/// 2) for known bits: all bit-set in [b.value] must exist in [a.value]
 pub fn xtnum_in(a: Tnum, b: Tnum) -> bool {
-    if (b.value & !a.value) != 0 {
+    // if we find one bit-set in [b.mask] but not in [a.mask], return false
+    if (b.mask & !a.mask) != 0 {
         return false;
     } else {
-        return (b.mask & !a.mask) == 0;
+        return a.value == b.value;
     }
 }
 

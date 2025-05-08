@@ -16,6 +16,16 @@ impl Tnum {
     pub fn new(value: u64, mask: u64) -> Self {
         Self { value, mask }
     }
+    
+    /// 获取 value 字段
+    pub fn value(&self) -> u64 {
+        self.value
+    }
+
+    /// 获取 mask 字段
+    pub fn mask(&self) -> u64 {
+        self.mask
+    }
 }
 
 /// 创建一个常数 tnum 实例
@@ -152,7 +162,8 @@ pub fn tnum_mul_opt(a: Tnum, b: Tnum) -> Tnum {
         tnum_lshift(b, a.value.trailing_zeros() as u8)
     } else if b.mask == 0  && b.value.count_ones() == 1 { // a.value = 2 ^ x
         tnum_lshift(a, b.value.trailing_zeros() as u8)
-    } else if (a.value | a.mask).count_ones() <= (b.value | b.mask).count_ones() {
+    } else 
+        if (a.value | a.mask).count_ones() <= (b.value | b.mask).count_ones() {
         tnum_mul(a, b)
     } else {
         tnum_mul(b, a)

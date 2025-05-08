@@ -29,6 +29,8 @@ rand = { version = "0.8.5", features = ["small_rng"]}
 rustc-demangle = "0.1"
 shuttle = { version = "0.7.1", optional = true }
 thiserror = "2.0.9"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3", features = ["memoryapi", "sysinfoapi", "winnt", "errhandlingapi"], optional = true }
@@ -50,3 +52,7 @@ json = "0.12"
 test_utils = { path = "test_utils/" }
 
 rand = "0.8"
+
+[[bin]]
+name = "test_mul"
+path = "tests/tnum.rs"

@@ -371,33 +371,34 @@ pub fn tnum_is_aligned(a: Tnum, size: u64) -> bool {
 }
 
 
+/// check if [b] is a subset of [a], that is
+/// 1) for unknown bits: all bit-set in [b.mask] must exist in [a.mask]
+/// 2) for known bits: all bit-set in [b.value] must exist in [a.value] or [a.mask]
 pub fn tnum_in(a: Tnum, b: Tnum) -> bool {
     if (b.mask & !a.mask) != 0 {
+        // if we find one bit-set in [b.mask] but not in [a.mask], return false
         return false;
     } else {
-        // TODO
+        // [(b.value & !a.mask)] removes all possible bit-set in [a.mask] from [b.value]
+        // the rest part should be equal to [a.value]
         return a.value == (b.value & !a.mask);
     }
 }
 
-/// check if [b] is a subset of [a], that is
-/// 1) for unknown bits: all bit-set in [b.mask] must exist in [a.mask]
-/// 2) for known bits: all bit-set in [b.value] must exist in [a.value]
-pub fn xtnum_in(a: Tnum, b: Tnum) -> bool {
-    // if we find one bit-set in [b.mask] but not in [a.mask], return false
-    if (b.mask & !a.mask) != 0 {
-        return false;
-    } else {
-        return a.value == b.value;
-    }
-}
+// pub fn xtnum_in(a: Tnum, b: Tnum) -> bool {
+//     if (b.mask & !a.mask) != 0 {
+//         return false;
+//     } else {
+//         return a.value == b.value;
+//     }
+// }
 
 #[test]
 fn test_tnum_in () -> (){
-    let a = Tnum::new(0, 15); // 2^4 - 1
-    let b = Tnum::new(0, 31); // 2^5 - 1
+    let a = Tnum::new(1, 0);
+    let b = Tnum::new(0, 1);
     println!("{:?}", tnum_in(b, a)); // true
-    println!("{:?}", xtnum_in(b, a)); // true
+    //println!("{:?}", xtnum_in(b, a)); // false
 }
 
 /// tnum转换为字符串

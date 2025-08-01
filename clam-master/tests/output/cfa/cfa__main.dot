@@ -1,0 +1,17 @@
+digraph main {
+5 [shape="circle" label="N5\n22"]
+21 [shape="circle" label="N21\n21"]
+14 [shape="doublecircle" label="N14\n6"]
+15 [shape="circle" label="N15\n1"]
+16 [shape="circle" label="N16\n5"]
+17 [shape="circle" label="N17\n0"]
+21 [style="filled,bold" penwidth="1" fillcolor="white" fontname="Courier New" shape="Mrecord" label=<<table border="0" cellborder="0" cellpadding="3" bgcolor="white"><tr><td align="right">21</td><td align="left">void abort();</td></tr><tr><td align="right">22</td><td align="left">void __assert_fail(const char *, const char *, unsigned int, const char *);</td></tr><tr><td align="right">23</td><td align="left">void reach_error();</td></tr><tr><td align="right">24</td><td align="left">int __VERIFIER_nondet_int();</td></tr><tr><td align="right">25</td><td align="left">char nd_char();</td></tr><tr><td align="right">26</td><td align="left">int main();</td></tr><tr><td align="right">27</td><td align="left">Function start dummy edge</td></tr><tr><td align="right">6</td><td align="left">char x;</td></tr><tr><td align="right">7</td><td align="left">x = nd_char();</td></tr><tr><td align="right">8</td><td align="left">__CRAB_assume(x &gt;= 0);</td></tr><tr><td align="right">9</td><td align="left">__CRAB_assume(x &lt;= 100);</td></tr><tr><td align="right">10</td><td align="left">x = 5;</td></tr><tr><td align="right">11</td><td align="left">__CRAB_intrinsic_print_invariants(x);</td></tr><tr><td align="right">12</td><td align="left">char y = -8;</td></tr><tr><td align="right">13</td><td align="left">while</td></tr></table>>]
+21 -> 14[label=""]
+16 [style="filled,bold" penwidth="1" fillcolor="white" fontname="Courier New" shape="Mrecord" label=<<table border="0" cellborder="0" cellpadding="3" bgcolor="white"><tr><td align="right">16</td><td align="left">__CRAB_intrinsic_print_invariants(x);</td></tr><tr><td align="right">18</td><td align="left">__VERIFIER_assert(x == -123);</td></tr><tr><td align="right">19</td><td align="left">return 0;</td></tr></table>>]
+16 -> 4[label=""]
+5 -> 21 [label="INIT GLOBAL VARS" fontname="Courier New"]
+14 -> 15 [label="[x >= y]" fontname="Courier New"]
+14 -> 16 [label="[!(x >= y)]" fontname="Courier New"]
+15 -> 17 [label="x = x - y;" fontname="Courier New"]
+17 -> 14 [label="" fontname="Courier New"]
+}

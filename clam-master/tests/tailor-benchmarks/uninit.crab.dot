@@ -1,0 +1,4 @@
+digraph "CFG for 'uninit' function" {
+	label="CFG for 'uninit' function";
+	Node0x8356550 [shape=record,label="{_call:\l}"];
+}

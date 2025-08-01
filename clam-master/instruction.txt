@@ -1,0 +1,180 @@
+Platform: Linux 5.15.0-100-generic
+LLVM version: 14.0
+usage: clam.py [-h] [-oll FILE] [-ocrab FILE] [-ojson FILE] [--log STR] [-o FILE] [--save-temps] [--temp-dir DIR] [-g] [-m MACHINE] [-I INCLUDE_DIR] [--no-preprocess] [--only-preprocess] [-O INT]
+               [--cpu SEC] [--mem MB] [--llvm-version] [--clang-version] [--llvm-dot-cfg] [--llvm-inline-threshold NUM] [--llvm-pp-loops] [--llvm-peel-loops NUM] [--inline] [--turn-undef-nondet]
+               [--promote-malloc [BOOL]] [--lower-select] [--lower-unsigned-icmp] [--disable-scalarize] [--disable-lower-constant-expr] [--disable-lower-switch] [--devirt-functions {none,types,sea-dsa}]
+               [--entry str] [--externalize-functions str,...] [--externalize-addr-taken-functions] [--print-after-all] [--debug-pass] [--crab-verbose UINT] [--crab-only-cfg] [--crab-cfg-simplify]
+               [--crab-dom {int,sign-const,ric,term-int,dis-int,term-dis-int,boxes,zones,soct,oct,pk,pk-pplite,rtz,w-int,tnum}] [--crab-dom-params STR] [--crab-widening-delay WIDENING_DELAY]
+               [--crab-widening-jump-set WIDENING_JUMP_SET] [--crab-narrowing-iterations NARROWING_ITERATIONS] [--crab-relational-threshold NUM_THRESHOLD] [--crab-track {num,sing-mem,mem}]
+               [--crab-heap-analysis {none,ci-sea-dsa,cs-sea-dsa,ci-sea-dsa-types,cs-sea-dsa-types}] [--crab-heap-dot] [--crab-singleton-aliases] [--crab-inter]
+               [--crab-inter-max-summaries INTER_MAX_SUMMARIES] [--crab-inter-recursive-functions [BOOL]] [--crab-inter-exact-summary-reuse [BOOL]] [--crab-inter-entry-main [BOOL]] [--crab-backward]
+               [--crab-live] [--crab-lower-unsigned-icmp [BOOL]] [--crab-lower-with-overflow-intrinsics [BOOL]] [--crab-opt {none,dce,add-invariants,replace-with-constants,all}]
+               [--crab-opt-invariants-loc {none,block-entry,loop-header,after-load,all}] [--crab-preserve-invariants [BOOL]] [--crab-promote-assume]
+               [--crab-check {none,assert,null-legacy,null,uaf-legacy,uaf,bounds,is-deref}] [--crab-check-only-typed [BOOL]] [--crab-check-only-noncyclic [BOOL]] [--crab-check-verbose INT]
+               [--crab-print-cfg [BOOL]] [--crab-dot-cfg [BOOL]] [--crab-print-invariants [BOOL]] [--crab-print-invariants-kind {blocks,loops}] [--crab-print-unjustified-assumptions [BOOL]]
+               [--crab-print-voi [BOOL]] [--crab-print-ghost-variables [BOOL]] [--crab-stats] [--crab-disable-warnings] [--crab-sanity-checks]
+               FILE
+
+Abstract Interpretation-based Analyzer for LLVM bitecode
+
+positional arguments:
+  FILE                  Input file
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -oll FILE, --oll FILE
+                        Output analyzed bitecode
+  -ocrab FILE, --ocrab FILE
+                        Output analyzed CrabIR with (optionally) annotations
+  -ojson FILE, --ojson FILE
+                        Output invariants to JSON format
+  --log STR             Log level for clam
+  -o FILE               Output file name
+  --save-temps          Do not delete temporary files
+  --temp-dir DIR        Temporary directory
+  -g                    Compile with debug information
+  -m MACHINE            Machine architecture MACHINE:[32,64]
+  -I INCLUDE_DIR        Include
+  --no-preprocess       Skip compilation and preprocessing
+  --only-preprocess     Run only the preprocessor
+  -O INT                Optimization level L:[0,1,2,3]
+  --cpu SEC             CPU time limit (seconds)
+  --mem MB              MEM limit (MB)
+  --llvm-version        Print llvm version
+  --clang-version       Print clang version
+  --llvm-dot-cfg        Print LLVM CFG of function to dot file
+  --llvm-inline-threshold NUM
+                        Inline threshold (default = 255)
+  --llvm-pp-loops       Optimizing loops
+  --llvm-peel-loops NUM
+                        Number of iterations to peel (default = 0)
+  --inline              Inline all functions
+  --turn-undef-nondet   Turn undefined behaviour into non-determinism
+  --promote-malloc [BOOL]
+                        Promote top-level malloc to alloca
+  --lower-select        Lower select instructions
+  --lower-unsigned-icmp
+                        Lower ULT and ULE instructions
+  --disable-scalarize   Disable lowering of vector operations into scalar ones
+  --disable-lower-constant-expr
+                        Disable lowering of constant expressions to instructions
+  --disable-lower-switch
+                        Disable lowering of switch instructions
+  --devirt-functions {none,types,sea-dsa}
+                        Resolve indirect calls (needed for soundness):
+                        - none : do not resolve indirect calls (default)
+                        - types: select all functions with same type signature
+                        - sea-dsa: use sea-dsa analysis to select the callees
+  --entry str           Make entry point if main does not exist
+  --externalize-functions str,...
+                        Externalize these functions
+  --externalize-addr-taken-functions
+                        Externalize uses of address-taken functions (potentially unsound)
+  --print-after-all     Print IR after each pass (for debugging)
+  --debug-pass          Print all LLVM passes executed (--debug-pass=Structure)
+  --crab-verbose UINT   Enable verbose messages
+  --crab-only-cfg       Build only the Crab CFG
+  --crab-cfg-simplify   Perform some crab CFG transformations
+  --crab-dom {int,sign-const,ric,term-int,dis-int,term-dis-int,boxes,zones,soct,oct,pk,pk-pplite,rtz,w-int,tnum}
+                        Choose abstract domain:
+                        - int: intervals
+                        - sign-const: reduced product of sign and constant domains
+                        - ric: reduced product of intervals and congruences
+                        - term-int: int with uninterpreted functions
+                        - dis-int: disjunctive intervals based on Clousot's DisInt domain
+                        - term-dis-int: dis-int with uninterpreted functions
+                        - boxes: disjunctive intervals based on LDDs
+                        - zones: zones domain using DBMs in Split Normal Form
+                        - soct: octagons domain using DBMs in Split Normal Form
+                        - oct: octagons domain from Apron or Elina
+                        - pk: polyhedra domain from Apron or Elina
+                        - pk-pplite: polyhedra domain from PPLite
+                        - rtz: reduced product of term-dis-int with zones
+                        - w-int: wrapped intervals
+                        - tnum: tnum domain
+                        - stnum: stnum domain
+                        - sw-int: swrapped intervals
+                        - switv-stnum: switv-stnum domain
+  --crab-dom-params STR
+                        Set abstract domain options STR="param1=val1:param2=val2:..."
+  --crab-widening-delay WIDENING_DELAY
+                        Max number of iterations until performing widening
+  --crab-widening-jump-set WIDENING_JUMP_SET
+                        Size of the jump set used in widening
+  --crab-narrowing-iterations NARROWING_ITERATIONS
+                        Max number of narrowing iterations
+  --crab-relational-threshold NUM_THRESHOLD
+                        Max number of live vars per block before switching to a non-relational domain
+  --crab-track {num,sing-mem,mem}
+                        Track integers (num), num + singleton memory objects (sing-mem), and num + all memory objects (mem)
+  --crab-heap-analysis {none,ci-sea-dsa,cs-sea-dsa,ci-sea-dsa-types,cs-sea-dsa-types}
+                        Heap analysis used for memory disambiguation (if --crab-track != num):
+                        - ci-sea-dsa: context-insensitive sea-dsa
+                        - cs-sea-dsa: context-sensitive sea-dsa
+                        - ci-sea-dsa-types: context-insensitive sea-dsa with types (default)
+                        - cs-sea-dsa-types: context-sensitive sea-dsa with types
+  --crab-heap-dot       Print seadsa memory graphs of each function to dot file
+  --crab-singleton-aliases
+                        Translate singleton alias sets (mostly globals) as scalar values
+  --crab-inter          Run summary-based, inter-procedural analysis
+  --crab-inter-max-summaries INTER_MAX_SUMMARIES
+                        Max number of summaries per function
+  --crab-inter-recursive-functions [BOOL]
+                        Precise analysis of recursive functions (more expensive). False by default
+  --crab-inter-exact-summary-reuse [BOOL]
+                        Reuse summaries without losing precision (more expensive). True by default
+  --crab-inter-entry-main [BOOL]
+                        Start analysis only from main (not applicable to libraries). False by default
+  --crab-backward       Run iterative forward/backward analysis for proving assertions (only intra version available and very experimental)
+  --crab-live           Delete dead symbols: may lose precision with relational domains.
+  --crab-lower-unsigned-icmp [BOOL]
+                        Replace unsigned comparison with signed comparisons in CrabIR
+  --crab-lower-with-overflow-intrinsics [BOOL]
+                        Replace llvm.OP.with.overflow.* in CrabIR with OP assuming no overflow occurs.
+                        This option should be only used if the arithmetic operations are known to not overflow
+  --crab-opt {none,dce,add-invariants,replace-with-constants,all}
+                        Optimize LLVM bitcode using invariants
+  --crab-opt-invariants-loc {none,block-entry,loop-header,after-load,all}
+                        Specify the location where invariants are added (only if crab-opt=add-invariants)
+  --crab-preserve-invariants [BOOL]
+                        Preserve invariants for queries after analysis has finished
+  --crab-promote-assume
+                        Promote verifier.assume calls to llvm.assume intrinsics
+  --crab-check {none,assert,null-legacy,null,uaf-legacy,uaf,bounds,is-deref}
+                        Check properties (default none):
+                        - assert: user-defined assertions via __CRAB_assert
+                        - null-legacy: insert __CRAB_assert calls in LLVM IR for null dereference errors
+                        - null: insert CrabIR assertions for null dereference errors
+                        - uaf-legacy: insert __CRAB_assert calls in LLVM IR for use-after-free errors
+                        - uaf: insert CrabIR assertions for use-after-free errors
+                        - bounds: insert CrabIR assertions and ghost code for buffer overflow errors
+                          (instrumentation is not complete: lack of modeling pointers stored in memory)
+                        - is-deref: insert CrabIR assertions for proving that calls to LLVM function sea.is_dereferenceable cannot fail
+                          (this option is used mostly by SeaHorn which adds the calls to sea.is_dereferenceable)
+  --crab-check-only-typed [BOOL]
+                        Add checks only on typed regions (only for null and uaf). False by default
+  --crab-check-only-noncyclic [BOOL]
+                        Add checks only on noncyclic regions (only for null and uaf). False by default
+  --crab-check-verbose INT
+                        Print verbose information about checks
+                        >=1: only error checks
+                        >=2: error and warning checks
+                        >=3: error, warning, and safe checks
+  --crab-print-cfg [BOOL]
+                        Display Crab CFG
+  --crab-dot-cfg [BOOL]
+                        Print Crab CFG of function to dot file
+  --crab-print-invariants [BOOL]
+                        Print invariants
+  --crab-print-invariants-kind {blocks,loops}
+                        Specify which invariants should be printed (only if crab-print-invariants=true)
+  --crab-print-unjustified-assumptions [BOOL]
+                        Print unjustified assumptions done by the analyzer (very very experimental, only for integer overflows and for intra-procedural analysis)
+  --crab-print-voi [BOOL]
+                        Print variables-of-influence of assertions (only if --crab-inter)
+  --crab-print-ghost-variables [BOOL]
+                        Print all ghost variables in the invariants. False by default.
+  --crab-stats          Display crab statistics
+  --crab-disable-warnings
+                        Disable clam and crab warnings
+  --crab-sanity-checks  Enable clam and crab sanity checks

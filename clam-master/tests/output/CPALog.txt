@@ -1,0 +1,42 @@
+2024-10-12 12:28:53:735	INFO	CPAMain.detectFrontendLanguageIfNecessary	Language C detected and set for analysis
+
+2024-10-12 12:28:53:749	INFO	ResourceLimitChecker.fromConfiguration	Using the following resource limits: CPU-time limit of 900s
+
+2024-10-12 12:28:53:791	INFO	CPAchecker.run	CPAchecker 2.3.1-svn / default (OpenJDK 64-Bit Server VM 17.0.12) started
+
+2024-10-12 12:28:53:800	INFO	CPAchecker.parse	Parsing CFA from file(s) "test3.c"
+
+2024-10-12 12:28:54:188	WARNING	CheckBindingVisitor.visit	Undefined function __CRAB_assume found, first called in line 16
+
+2024-10-12 12:28:54:189	WARNING	CheckBindingVisitor.visit	Undefined function __CRAB_intrinsic_print_invariants found, first called in line 21
+
+2024-10-12 12:28:54:197	WARNING	CheckBindingVisitor.visit	Undefined function __VERIFIER_assert found, first called in line 29
+
+2024-10-12 12:28:54:537	INFO	CoreComponentsFactory.createAlgorithm	Using Restarting Algorithm
+
+2024-10-12 12:28:54:543	INFO	CPAchecker.runAlgorithm	Starting analysis ...
+
+2024-10-12 12:28:54:545	INFO	RestartAlgorithm.run	Loading analysis 1 from file /home/fgs/cpachecker/config/components/kInduction+Invariants/kInduction.properties ...
+
+2024-10-12 12:28:54:547	INFO	Analysis /home/fgs/cpachecker/config/components/kInduction+Invariants/kInduction.properties:ResourceLimitChecker.fromConfiguration	Using the following resource limits: CPU-time limit of 900s
+
+2024-10-12 12:28:54:555	INFO	Analysis /home/fgs/cpachecker/config/components/kInduction+Invariants/kInduction.properties:Parallel analysis 1:ResourceLimitChecker.fromConfiguration	Using the following resource limits: CPU-time limit of 900s
+
+2024-10-12 12:28:54:620	INFO	Analysis /home/fgs/cpachecker/config/components/kInduction+Invariants/kInduction.properties:Parallel analysis 1:PredicateCPA:PredicateCPA.<init>	Using predicate analysis with MathSAT5 version 5.6.10 (9293adc746be) (May 31 2023 12:38:06, gmp 6.2.0, gcc 7.5.0, 64-bit, reentrant).
+
+2024-10-12 12:28:54:724	INFO	Analysis /home/fgs/cpachecker/config/components/kInduction+Invariants/kInduction.properties:Parallel analysis 1:InductionStepCase:PredicateCPA:PredicateCPA.<init>	Using predicate analysis with MathSAT5 version 5.6.10 (9293adc746be) (May 31 2023 12:38:06, gmp 6.2.0, gcc 7.5.0, 64-bit, reentrant).
+
+2024-10-12 12:28:54:739	INFO	Analysis /home/fgs/cpachecker/config/components/kInduction+Invariants/kInduction.properties:Parallel analysis 2:ResourceLimitChecker.fromConfiguration	Using the following resource limits: CPU-time limit of 900s
+
+2024-10-12 12:28:54:753	INFO	RestartAlgorithm.run	Starting analysis 1 ...
+
+2024-10-12 12:28:54:770	INFO	Analysis /home/fgs/cpachecker/config/components/kInduction+Invariants/kInduction.properties:ParallelAlgorithm.handleFutureResults	/home/fgs/cpachecker/config/components/kInduction+Invariants/../kInduction/kInduction.properties finished successfully.
+
+2024-10-12 12:28:54:773	INFO	Analysis /home/fgs/cpachecker/config/components/kInduction+Invariants/kInduction.properties:Parallel analysis 2:ParallelAlgorithm.runParallelAnalysis	Analysis was terminated
+
+2024-10-12 12:28:54:773	INFO	RestartAlgorithm.skipNextAnalysesIfRequired	Ignoring restart configuration '/home/fgs/cpachecker/config/components/valueAnalysis-predicateAnalysis-bam-rec.properties' because condition if-recursive did not match.
+
+2024-10-12 12:28:54:774	INFO	RestartAlgorithm.skipNextAnalysesIfRequired	Ignoring restart configuration '/home/fgs/cpachecker/config/components/bddAnalysis-concurrency.properties' because condition if-concurrent did not match.
+
+2024-10-12 12:28:54:774	INFO	CPAchecker.runAlgorithm	Stopping analysis ...
+

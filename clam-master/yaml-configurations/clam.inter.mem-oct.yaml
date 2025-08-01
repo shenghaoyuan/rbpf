@@ -1,0 +1,61 @@
+clam_options:
+#
+# Optimization level
+#
+#  '-O3': ''
+#
+# Debug symbols
+#
+  '-g' : ''
+  '-m64': ''
+#   
+# PREPROCESSING
+#
+# SVCOMP19 has a weird memory model different from standard C memory
+# model. Programs can have uninitialized variables and reading from
+# them it is okay and treated as reading from a non-deterministic value.
+  turn-undef-nondet : ''
+# convert unsigned icmp instructions into signed icmp instructions
+  lower-unsigned-icmp : ''
+# peel loops to improve precision of the region and array domains
+  llvm-peel-loops: '0'
+# weak support for function pointers. sea-dsa is better but less stable
+  devirt-functions: 'types'
+# disable lowering of vector operations into scalar ones
+  disable-scalarize: ''
+#  
+# ANALYSIS
+#
+# enable inter-procedural analysis
+  crab-inter : ''
+# highest precision level for the translation from LLVM to Crab
+  crab-track : 'mem'
+  crab-singleton-aliases : ''
+# pointer analysis to disambiguate memory: context-sensitive with types
+  crab-heap-analysis : 'cs-sea-dsa-types'
+# enable sanity checks
+  crab-sanity-checks : ''
+# Option to free invariants as soon as possible
+  crab-preserve-invariants: false
+# disable warnings
+  crab-disable-warnings: ''
+  crab-print-invariants: false
+# keep intermediate results for debugging 
+#  save-temps: ''
+#  temp-dir: /tmp/clam
+# time and result stats
+  crab-stats: ''
+
+# abstract domain
+  crab-dom: 'oct'
+
+#
+# CHECKER
+#
+# Check for user-defined assertions
+  crab-check: 'assert'
+
+# RESOURCE LIMITS 
+#
+# Timeout of 3 minutes
+  cpu: '180'

@@ -1,0 +1,43 @@
+file(REMOVE_RECURSE
+  "../libLlvmPasses.a"
+  "../libLlvmPasses.pdb"
+  "CMakeFiles/LlvmPasses.dir/DevirtFunctions.cc.o"
+  "CMakeFiles/LlvmPasses.dir/DevirtFunctions.cc.o.d"
+  "CMakeFiles/LlvmPasses.dir/DevirtFunctionsPass.cc.o"
+  "CMakeFiles/LlvmPasses.dir/DevirtFunctionsPass.cc.o.d"
+  "CMakeFiles/LlvmPasses.dir/ExternalizeAddressTakenFunctions.cc.o"
+  "CMakeFiles/LlvmPasses.dir/ExternalizeAddressTakenFunctions.cc.o.d"
+  "CMakeFiles/LlvmPasses.dir/ExternalizeFunctions.cc.o"
+  "CMakeFiles/LlvmPasses.dir/ExternalizeFunctions.cc.o.d"
+  "CMakeFiles/LlvmPasses.dir/InsertEntryPoint.cc.o"
+  "CMakeFiles/LlvmPasses.dir/InsertEntryPoint.cc.o.d"
+  "CMakeFiles/LlvmPasses.dir/LoopPeeler.cc.o"
+  "CMakeFiles/LlvmPasses.dir/LoopPeeler.cc.o.d"
+  "CMakeFiles/LlvmPasses.dir/LowerCstExpr.cc.o"
+  "CMakeFiles/LlvmPasses.dir/LowerCstExpr.cc.o.d"
+  "CMakeFiles/LlvmPasses.dir/LowerSelect.cc.o"
+  "CMakeFiles/LlvmPasses.dir/LowerSelect.cc.o.d"
+  "CMakeFiles/LlvmPasses.dir/LowerUnsignedICmp.cc.o"
+  "CMakeFiles/LlvmPasses.dir/LowerUnsignedICmp.cc.o.d"
+  "CMakeFiles/LlvmPasses.dir/MarkInternalInline.cc.o"
+  "CMakeFiles/LlvmPasses.dir/MarkInternalInline.cc.o.d"
+  "CMakeFiles/LlvmPasses.dir/NondetInit.cc.o"
+  "CMakeFiles/LlvmPasses.dir/NondetInit.cc.o.d"
+  "CMakeFiles/LlvmPasses.dir/PromoteAssume.cc.o"
+  "CMakeFiles/LlvmPasses.dir/PromoteAssume.cc.o.d"
+  "CMakeFiles/LlvmPasses.dir/PromoteMalloc.cc.o"
+  "CMakeFiles/LlvmPasses.dir/PromoteMalloc.cc.o.d"
+  "CMakeFiles/LlvmPasses.dir/PropertyInstrumentation/MemoryCheck.cc.o"
+  "CMakeFiles/LlvmPasses.dir/PropertyInstrumentation/MemoryCheck.cc.o.d"
+  "CMakeFiles/LlvmPasses.dir/PropertyInstrumentation/NullCheck.cc.o"
+  "CMakeFiles/LlvmPasses.dir/PropertyInstrumentation/NullCheck.cc.o.d"
+  "CMakeFiles/LlvmPasses.dir/PropertyInstrumentation/UseAfterFreeCheck.cc.o"
+  "CMakeFiles/LlvmPasses.dir/PropertyInstrumentation/UseAfterFreeCheck.cc.o.d"
+  "CMakeFiles/LlvmPasses.dir/RemoveUnreachableBlocksPass.cc.o"
+  "CMakeFiles/LlvmPasses.dir/RemoveUnreachableBlocksPass.cc.o.d"
+)
+
+# Per-language clean rules from dependency scanning.
+foreach(lang CXX)
+  include(CMakeFiles/LlvmPasses.dir/cmake_clean_${lang}.cmake OPTIONAL)
+endforeach()

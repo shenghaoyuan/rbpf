@@ -1,0 +1,2 @@
+/usr/bin/ar Dqc ../libClamOptimizer.a CMakeFiles/ClamOptimizer.dir/Optimizer/Optimizer.cc.o
+/usr/bin/ranlib -D ../libClamOptimizer.a

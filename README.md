@@ -12,6 +12,22 @@
 - libjson-c-dev
 - libgmp-dev
 
+### 安装 clam
+```shell
+cd clam-master
+sudo apt-get install libboost-all-dev libboost-program-options-dev
+sudo apt-get install libgmp-dev
+sudo apt-get install libmpfr-dev	
+sudo apt-get install libflint-dev
+
+pip3 install lit # update PATH according to the output warnning. vim ~/.bashrc and source ~/.bashrc
+pip3 install OutputCheck
+
+mkdir build && cd build
+cmake -DCMAKE_INSTALL_PREFIX=$DIR ../                
+sudo cmake --build . --target install 
+```
+
 ### 项目结构
 ```
 .

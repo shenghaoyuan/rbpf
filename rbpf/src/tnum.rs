@@ -22,7 +22,7 @@ impl BitOps for u64 {
         if n >= 64 {
             *self = 0;
         } else {
-            *self &= !((1u64 << n) - 1);
+            *self &= (!0u64).wrapping_shl(n);
         }
     }
 
@@ -254,8 +254,6 @@ impl Tnum {
                 max_res.clear_high_bits((len + x.value) as u32);
             }
 
-            res.mask = u64::MAX;
-            res.value = u64::MAX;
             res = Tnum {
                 value: u64::MAX,
                 mask: u64::MAX,
@@ -263,7 +261,7 @@ impl Tnum {
             let mut join_count = 0;
             for i in min_shift_amount..=max_shift_amount {
                 res = res.or(&self.lshr_const(i));
-                join_count += 1;
+                // join_count += 1;
                 if join_count > 6 || res.is_top() {
                     return max_res;
                 }
@@ -632,14 +630,9 @@ impl Tnum {
             return Self::top();
         }
 
-        let w = 64u8;
-
         // 处理单点值情况
         if self.is_singleton() && other.is_singleton() {
-            let res_single = Tnum::new(
-                (self.value as i64).wrapping_rem(other.value as i64) as u64,
-                0,
-            );
+            let res_single = Tnum::new((self.value as i64).wrapping_rem(other.value as i64) as u64,0);
             return res_single;
         }
 
@@ -647,9 +640,9 @@ impl Tnum {
         if other.value == 0 {
             return Self::top(); // top
         } else {
-            let mut res = rem_get_low_bits(self,&other);
+            let mut res = rem_get_low_bits(self, &other);
             if other.mask == 0
-                && other.mask >> 63 & 1 == 1
+                && (other.value) & 1 == 0
                 && ((other.value.trailing_zeros() + other.value.leading_zeros() + 1) == 64)
             {
                 let low_bits = other.value - 1;
@@ -671,8 +664,6 @@ impl Tnum {
             return res;
         }
     }
-
-    
 
     /// 无符号取余操作（URem）
     pub fn urem(&self, other: Self) -> Self {
@@ -994,7 +985,7 @@ impl Tnum {
         }
 
         let width = 64; // 固定位宽
-        let shift = k % width as u64; // 确保移位值在范围内，模拟 wrapint(k, w)
+        let shift = k; // 确保移位值在范围内，模拟 wrapint(k, w)
 
         Self::new(
             self.value.wrapping_shr(shift as u32),
@@ -1078,8 +1069,6 @@ impl Tnum {
     }
 
     pub fn and(&self, other: &Tnum) -> Tnum {
-        // 修改参数类型为 &Tnum
-        // 检查偏序关系
         if self.le(other) {
             return *self;
         } else if other.le(self) {
@@ -1101,30 +1090,29 @@ impl Tnum {
 }
 
 pub fn rem_get_low_bits(lhs: &Tnum, rhs: &Tnum) -> Tnum {
-        let w = 64u8; // 固定位宽为64
+    let w = 64u8; // 固定位宽为64
 
-        // 检查 RHS 是否为零，以及 value 和 mask 是否都是偶数
-        if !rhs.is_zero() && (rhs.value & 1) == 0 && (rhs.mask & 1) == 0 {
-            let qzero = rhs.count_min_trailing_zeros();
+    if !rhs.is_zero() && (rhs.value & 1) == 0 && (rhs.mask & 1) == 0 {
+        let qzero = rhs.count_min_trailing_zeros();
 
-            // 注意：原C++代码中 if(qzero = 0) 是赋值操作，这里应该是比较
-            if qzero == 0 {
-                return Tnum::top();
-            }
-
-            // 创建掩码：((1 << (qzero - 1)) - 1)
-            let mask = if qzero > 1 {
-                (1u64 << (qzero - 1)) - 1
-            } else {
-                0u64
-            };
-
-            let res_value = lhs.value & mask;
-            let res_mask = lhs.mask & mask;
-            let res = Tnum::new(res_value, res_mask);
-
-            return res;
+        if qzero == 0 {
+            return Tnum::top();
         }
 
-        Tnum::top()
+        /// mask源代码看起来有点问题？
+        let mut mask = if qzero > 1 {
+            (1u64 << (qzero - 1)) - 1
+        } else {
+            0u64
+        };
+        mask = 0xFFFFFFFFFFFFFFFF;
+
+        let res_value = lhs.value & mask;
+        let res_mask = lhs.mask & mask;
+        let res = Tnum::new(res_value, res_mask);
+
+        return res;
     }
+
+    Tnum::top()
+}

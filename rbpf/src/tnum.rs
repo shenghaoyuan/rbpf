@@ -9,6 +9,32 @@ fn testbit(val: u64, bit: u8) -> bool {
     (val & (1u64 << bit)) != 0
 }
 
+/// 位操作 trait
+pub trait BitOps {
+    /// 清除低位（从最低位开始的 n 位）
+    fn clear_low_bits(&mut self, n: u32);
+    /// 清除高位（从最高位开始的 n 位）
+    fn clear_high_bits(&mut self, n: u32);
+}
+
+impl BitOps for u64 {
+    fn clear_low_bits(&mut self, n: u32) {
+        if n >= 64 {
+            *self = 0;
+        } else {
+            *self &= !((1u64 << n) - 1);
+        }
+    }
+
+    fn clear_high_bits(&mut self, n: u32) {
+        if n >= 64 {
+            *self = 0;
+        } else {
+            *self &= (1u64 << (64 - n)) - 1;
+        }
+    }
+}
+
 // This is for bit-level abstraction
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// tnum definition
@@ -23,15 +49,14 @@ impl Tnum {
         Self { value, mask }
     }
 
-    /// 创建 bottom 元素（表示"不可能的值"）
+    /// 创建 bottom 元素
     pub fn bottom() -> Self {
-        // 使用 value & mask != 0 的方式表示 bottom
-        Self::new(1, 1) // 任何 value & mask != 0 的组合都是 bottom
+        Self::new(0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF)
     }
 
-    /// 创建 top 元素（表示"任何可能的值"）
+    /// 创建 top 元素
     pub fn top() -> Self {
-        Self::new(0, u64::MAX)
+        Self::new(0, 0xFFFFFFFFFFFFFFFF)
     }
 
     /// 创建一个常数 tnum 实例
@@ -64,6 +89,9 @@ impl Tnum {
         self.mask
     }
 
+    pub fn is_zero(&self) -> bool {
+        self.value == 0 && self.mask == 0
+    }
     /// 判断是否为bottom（不可能的值）
     pub fn is_bottom(&self) -> bool {
         (self.value & self.mask) != 0
@@ -133,36 +161,117 @@ impl Tnum {
         }
     }
 
-    /// tnum 的左移操作
-    pub fn lshift(&self, shift: u8) -> Self {
-        Self::new(
-            self.value.wrapping_shl(shift as u32),
-            self.mask.wrapping_shl(shift as u32),
-        )
-    }
+    pub fn shl(&self, x: &Tnum) -> Tnum {
+        if self.is_bottom() || x.is_bottom() {
+            return Tnum::bottom();
+        } else if self.is_top() || x.is_top() {
+            return Tnum::top();
+        }
 
-    /// tnum 的右移操作
-    pub fn rshift(&self, shift: u8) -> Self {
-        Self::new(
-            self.value.wrapping_shr(shift as u32),
-            self.mask.wrapping_shr(shift as u32),
-        )
-    }
+        if x.is_singleton() {
+            return self.shl_const(x.value);
+        } else {
+            let w = 64u8;
+            let mut res = Tnum::top();
+            let min_shift_amount = x.value;
 
-    /// tnum 算数右移的操作
-    pub fn arshift(&self, min_shift: u8, insn_bitness: u8) -> Self {
-        match insn_bitness {
-            32 => {
-                //32位模式
-                let value = ((self.value as i32) >> min_shift) as u32;
-                let mask = ((self.mask as i32) >> min_shift) as u32;
-                Self::new(value as u64, mask as u64)
+            if self.mask == u64::MAX {
+                res.value = res.value.wrapping_shl(min_shift_amount as u32);
+                res.mask = res.mask.wrapping_shl(min_shift_amount as u32);
+                return res;
             }
-            _ => {
-                //64位模式
-                let value = ((self.value as i64) >> min_shift) as u64;
-                let mask = ((self.mask as i64) >> min_shift) as u64;
-                Self::new(value, mask)
+
+            let max_value = x.value.wrapping_add(x.mask);
+            let len = (self.value | self.mask).leading_zeros() as u64;
+            let mut max_res = Tnum::top();
+
+            if len > max_value {
+                max_res.mask.clear_high_bits((len - max_value) as u32);
+            }
+
+            let max_shift_amount = if max_value > w as u64 {
+                w as u64
+            } else {
+                max_value
+            };
+
+            if min_shift_amount == 0 && max_shift_amount == w as u64 {
+                println!("[Rust shl] Fast path: shift amount is unknown");
+                let min_trailing_zeros = self.count_min_trailing_zeros();
+                res.value.clear_low_bits(min_trailing_zeros);
+                res.mask.clear_low_bits(min_trailing_zeros);
+                return res;
+            }
+
+            res.mask = u64::MAX;
+            res.value = u64::MAX;
+            let mut join_count = 0;
+
+            for i in min_shift_amount..=max_shift_amount {
+                if x.value == ((!x.mask) & i) {
+                    continue;
+                }
+                join_count += 1;
+                let tmp = self.shl_const(i);
+                res = res.or(&tmp);
+                if join_count > 8 || res.is_top() {
+                    return Tnum::top();
+                }
+            }
+
+            if res.is_bottom() {
+                Tnum::top()
+            } else {
+                res
+            }
+        }
+    }
+
+    pub fn lshr(&self, x: &Tnum) -> Tnum {
+        if self.is_bottom() || x.is_bottom() {
+            return Tnum::bottom();
+        } else if self.is_top() || x.is_top() {
+            return Tnum::top();
+        }
+
+        if x.is_singleton() {
+            return self.lshr_const(x.value);
+        } else {
+            let w = 64u8; // 假设 64 位
+            let mut res = Tnum::top();
+            let min_shift_amount = x.value;
+            let len = self.value.leading_zeros() as u64;
+            let max_value = x.value.wrapping_add(x.mask);
+            let max_shift_amount = if max_value > w as u64 {
+                w as u64
+            } else {
+                max_value
+            };
+            let mut max_res = Tnum::top();
+            if (len + x.value) >= w as u64 {
+                return Tnum::new(0, 0);
+            } else {
+                max_res.clear_high_bits((len + x.value) as u32);
+            }
+
+            res.mask = u64::MAX;
+            res.value = u64::MAX;
+            res = Tnum {
+                value: u64::MAX,
+                mask: u64::MAX,
+            };
+            let mut join_count = 0;
+            for i in min_shift_amount..=max_shift_amount {
+                res = res.or(&self.lshr_const(i));
+                join_count += 1;
+                if join_count > 6 || res.is_top() {
+                    return max_res;
+                }
+            }
+            if res.is_bottom() {
+                max_res
+            } else {
+                res
             }
         }
     }
@@ -197,6 +306,11 @@ impl Tnum {
 
     /// tnum 的减法操作
     pub fn sub(&self, other: Self) -> Self {
+        if self.is_bottom() || other.is_bottom() {
+            return Self::bottom();
+        } else if self.is_top() || other.is_top() {
+            return Self::top();
+        }
         let dv = self.value.wrapping_sub(other.value);
         let alpha = dv.wrapping_add(self.mask);
         let beta = dv.wrapping_sub(other.mask);
@@ -205,30 +319,14 @@ impl Tnum {
         Self::new(dv & !mu, mu)
     }
 
-    /// tnum 的按位与操作
-    pub fn and(&self, other: Self) -> Self {
+    /// tnum 的按位异或操作
+    pub fn xor(&self, other: Self) -> Self {
         if self.is_bottom() || other.is_bottom() {
             return Self::bottom();
         } else if self.is_top() || other.is_top() {
             return Self::top();
         }
-        let alpha = self.value | self.mask;
-        let beta = other.value | other.mask;
-        let v = self.value & other.value;
 
-        Self::new(v, alpha & beta & !v)
-    }
-
-    /// tnum 的按位或操作
-    pub fn or(&self, other: Self) -> Self {
-        let v = self.value | other.value;
-        let mu = self.mask | other.mask;
-
-        Self::new(v, mu & !v)
-    }
-
-    /// tnum 的按位异或操作
-    pub fn xor(&self, other: Self) -> Self {
         let v = self.value ^ other.value;
         let mu = self.mask | other.mask;
 
@@ -237,20 +335,26 @@ impl Tnum {
 
     /// tnum 的乘法操作
     pub fn mul(&self, other: Self) -> Self {
+        if self.is_bottom() || other.is_bottom() {
+            return Self::bottom();
+        } else if self.is_top() || other.is_top() {
+            return Self::top();
+        }
         let mut a = *self;
         let mut b = other;
         let acc_v = a.value.wrapping_mul(b.value);
         let mut acc_m: Self = Self::new(0, 0);
         while (a.value != 0) || (a.mask != 0) {
+            // println!("acc_m.mask:{:?}, acc_m.value:{:?}", acc_m.mask, acc_m.value);
             if (a.value & 1) != 0 {
-                acc_m = acc_m.add(Self::new(0, b.mask));
+                acc_m = acc_m.add(Tnum::new(0, b.mask));
             } else if (a.mask & 1) != 0 {
-                acc_m = acc_m.add(Self::new(0, b.value | b.mask));
+                acc_m = acc_m.add(Tnum::new(0, b.value | b.mask));
             }
-            a = a.rshift(1);
-            b = b.lshift(1);
+            a = a.lshr_const(1);
+            b = b.shl_const(1);
         }
-        Self::new(acc_v, 0).add(acc_m)
+        Tnum::new(acc_v, 0).add(acc_m)
     }
 
     /// tnum 的按位非操作
@@ -268,10 +372,10 @@ impl Tnum {
         // 如果一个是常数
         if self.mask == 0 && self.value.count_ones() == 1 {
             // a.value = 2 ^ x
-            other.lshift(self.value.trailing_zeros() as u8)
+            other.shl_const(self.value.trailing_zeros() as u64)
         } else if other.mask == 0 && other.value.count_ones() == 1 {
             // a.value = 2 ^ x
-            self.lshift(other.value.trailing_zeros() as u8)
+            self.shl_const(other.value.trailing_zeros() as u64)
         } else if (self.value | self.mask).count_ones() <= (other.value | other.mask).count_ones() {
             self.mul(other)
         } else {
@@ -303,8 +407,8 @@ impl Tnum {
             let (y1, i1, y2) = self.split_at_mu();
             let p = y1.mul_const(c, n - 1);
             let mc = Self::new(c.wrapping_mul(y2.mask), 0);
-            let mu0 = p.lshift((i1 + 1) as u8).add(mc);
-            let mu1 = mu0.add(Self::new(c.wrapping_shl(i1), 0));
+            let mu0 = p.shl_const((i1 + 1) as u64).add(mc);
+            let mu1 = mu0.add(Self::new(c.wrapping_shl(i1 as u32), 0));
             mu0.join(mu1)
         }
     }
@@ -323,8 +427,8 @@ impl Tnum {
                 Self::xtnum_mul(x, i, y1, j - 1)
             };
             let mc = x.mul_const(y2.value, i);
-            let mu0 = p.lshift((i1 + 1) as u8).add(mc);
-            let mu1 = mu0.add(x.lshift(i1 as u8));
+            let mu0 = p.shl_const((i1 + 1) as u64).add(mc);
+            let mu1 = mu0.add(x.shl_const(i1 as u64));
             mu0.join(mu1)
         }
     }
@@ -384,9 +488,9 @@ impl Tnum {
                 self.xtnum_mul_high(y_prime, n - 1)
             };
             if ym {
-                p.add(self.lshift(b - 1)).join(p)
+                p.add(self.shl_const((b - 1) as u64)).join(p)
             } else {
-                p.add(self.lshift(b - 1))
+                p.add(self.shl_const((b - 1) as u64))
             }
         }
     }
@@ -508,11 +612,11 @@ impl Tnum {
     }
 
     pub fn clear_subreg(&self) -> Self {
-        self.rshift(32).lshift(32)
+        self.lshr_const(32).shl_const(32)
     }
 
     pub fn with_subreg(&self, subreg: Self) -> Self {
-        self.clear_subreg().or(subreg.subreg())
+        self.clear_subreg().or(&subreg.subreg())
     }
 
     pub fn with_const_subreg(&self, value: u32) -> Self {
@@ -528,53 +632,47 @@ impl Tnum {
             return Self::top();
         }
 
+        let w = 64u8;
+
         // 处理单点值情况
         if self.is_singleton() && other.is_singleton() {
-            if other.value == 0 {
-                return Self::top(); // 除以0返回top
-            }
-            // 计算有符号取余
-            let a_val = self.value as i64;
-            let b_val = other.value as i64;
-            let result = a_val % b_val;
-            return Self::new(result as u64, 0);
+            let res_single = Tnum::new(
+                (self.value as i64).wrapping_rem(other.value as i64) as u64,
+                0,
+            );
+            return res_single;
         }
 
         // 处理除数为0的情况
         if other.value == 0 {
             return Self::top(); // top
-        }
-
-        // 处理除数是2的幂的情况
-        if other.mask == 0
-            && !((other.value >> 63) & 1 == 1)
-            && ((other.value.trailing_zeros() + other.value.leading_zeros() + 1) == 64)
-        {
-            let low_bits = other.value - 1;
-            let mut res_value = self.value & low_bits;
-            let mut res_mask = self.mask & low_bits;
-
-            // 如果被除数非负或低位0足够多
-            if self.is_nonnegative() || (other.value.trailing_zeros() <= self.count_min_trailing_zeros()) {
-                // 保持现有值
+        } else {
+            let mut res = rem_get_low_bits(self,&other);
+            if other.mask == 0
+                && other.mask >> 63 & 1 == 1
+                && ((other.value.trailing_zeros() + other.value.leading_zeros() + 1) == 64)
+            {
+                let low_bits = other.value - 1;
+                if self.is_nonnegative()
+                    || (other.value.trailing_zeros() <= self.count_min_trailing_zeros())
+                {
+                    res.value = low_bits & res.value;
+                    res.mask = low_bits & res.mask;
+                }
+                if self.is_negative() && !(self.value & low_bits) == 0 {
+                    res.mask = low_bits & res.mask;
+                    res.value = (!low_bits) | res.value;
+                }
+                return res;
             }
-            // 如果被除数为负且低位不全为0
-            else if self.is_negative() && ((self.value & low_bits) != 0) {
-                res_mask = low_bits & res_mask;
-                res_value = (!low_bits) | res_value;
-            }
-
-            return Self::new(res_value, res_mask);
+            let leadingz = self.count_min_leading_zeros();
+            res.value.clear_high_bits(leadingz);
+            res.mask.clear_high_bits(leadingz);
+            return res;
         }
-
-        // 一般情况：结果的精度有限
-        // 保留原操作数中的前导零
-        let mut result = Self::top(); // 先创建一个top
-        let leading_zeros = self.count_min_leading_zeros();
-        result.clear_high_bits(leading_zeros);
-
-        return result;
     }
+
+    
 
     /// 无符号取余操作（URem）
     pub fn urem(&self, other: Self) -> Self {
@@ -605,7 +703,9 @@ impl Tnum {
 
         // 一般情况：结果的精度有限
         // 由于结果小于或等于任一操作数，因此操作数中的前导零在结果中也存在
-        let leading_zeros = self.count_min_leading_zeros().max(other.count_min_leading_zeros());
+        let leading_zeros = self
+            .count_min_leading_zeros()
+            .max(other.count_min_leading_zeros());
         let mut res = Self::top(); // 先创建一个top
         res.clear_high_bits(leading_zeros);
 
@@ -670,7 +770,8 @@ impl Tnum {
 
         if self.is_negative() && other.is_negative() {
             // Result is non-negative
-            if self.value == i64::MIN as u64 && other.is_singleton() && other.value == -1i64 as u64 {
+            if self.value == i64::MIN as u64 && other.is_singleton() && other.value == -1i64 as u64
+            {
                 return Self::top(); // overflow
             }
 
@@ -701,10 +802,12 @@ impl Tnum {
         }
 
         if tmp != 0 {
-            if (tmp >> 63) & 1 == 0 { // non-negative
+            if (tmp >> 63) & 1 == 0 {
+                // non-negative
                 let lead_zeros = tmp.leading_zeros();
                 result.clear_high_bits(lead_zeros);
-            } else { // negative
+            } else {
+                // negative
                 let lead_ones = (!tmp).leading_zeros();
                 if lead_ones > 0 {
                     let high_mask = u64::MAX << (64 - lead_ones);
@@ -714,7 +817,7 @@ impl Tnum {
             }
         }
         result
-    }    
+    }
 
     /// 有符号除法操作
     pub fn sdiv(&self, other: Self) -> Self {
@@ -747,10 +850,8 @@ impl Tnum {
         res00.join(res01).join(res10).join(res11)
     }
 
-    
-
     fn get_signed_min_value(&self) -> u64 {
-        if (self.value >> 63) & 1 == 1 { 
+        if (self.value >> 63) & 1 == 1 {
             self.value | self.mask
         } else {
             self.value
@@ -758,7 +859,7 @@ impl Tnum {
     }
 
     fn get_signed_max_value(&self) -> u64 {
-        if (self.value >> 63) & 1 == 1 { 
+        if (self.value >> 63) & 1 == 1 {
             self.value
         } else {
             self.value | self.mask
@@ -814,8 +915,10 @@ impl Tnum {
             result.mask &= !1;
         }
 
-        let min_tz = self.count_min_trailing_zeros() as i32 - other.count_max_trailing_zeros() as i32;
-        let max_tz = self.count_max_trailing_zeros() as i32 - other.count_min_trailing_zeros() as i32;
+        let min_tz =
+            self.count_min_trailing_zeros() as i32 - other.count_max_trailing_zeros() as i32;
+        let max_tz =
+            self.count_max_trailing_zeros() as i32 - other.count_min_trailing_zeros() as i32;
 
         if min_tz >= 0 {
             // 结果至少有min_tz个尾随零
@@ -823,14 +926,14 @@ impl Tnum {
             if min_tz_u32 < 64 {
                 let min_tz_mask = !((1u64 << min_tz_u32) - 1);
                 result.value &= min_tz_mask; // 清除低位
-                result.mask &= min_tz_mask;   // 清除低位的掩码
+                result.mask &= min_tz_mask; // 清除低位的掩码
             }
 
             if min_tz == max_tz {
                 if min_tz_u32 < 64 {
                     // 结果恰好有min_tz个尾随零
                     result.value |= 1u64 << min_tz_u32; // 设置第min_tz位为1
-                    result.mask &= !(1u64 << min_tz_u32);   // 清除第min_tz位的掩码
+                    result.mask &= !(1u64 << min_tz_u32); // 清除第min_tz位的掩码
                 }
             }
         }
@@ -842,4 +945,186 @@ impl Tnum {
 
         result
     }
+
+    /// 创建指定位宽的 bottom 元素
+    pub fn bottom_with_width(width: u32) -> Self {
+        let mask = if width >= 64 {
+            u64::MAX
+        } else {
+            (1u64 << width) - 1
+        };
+        Self::new(mask, mask)
+    }
+
+    /// 创建指定位宽的 top 元素
+    pub fn top_with_width(width: u32) -> Self {
+        let mask = if width >= 64 {
+            u64::MAX
+        } else {
+            (1u64 << width) - 1
+        };
+        Self::new(0, mask)
+    }
+
+    pub fn shl_const(&self, k: u64) -> Self {
+        // 处理特殊情况
+        if self.is_bottom() {
+            return *self;
+        }
+        if self.is_top() {
+            return *self;
+        }
+
+        let width = 64; // 固定位宽
+        let shift = k % width as u64; // 确保移位值在范围内，模拟 wrapint(k, w)
+
+        Self::new(
+            self.value.wrapping_shl(shift as u32),
+            self.mask.wrapping_shl(shift as u32),
+        )
+    }
+
+    pub fn lshr_const(&self, k: u64) -> Self {
+        // 处理特殊情况
+        if self.is_bottom() {
+            return *self;
+        }
+        if self.is_top() {
+            return *self;
+        }
+
+        let width = 64; // 固定位宽
+        let shift = k % width as u64; // 确保移位值在范围内，模拟 wrapint(k, w)
+
+        Self::new(
+            self.value.wrapping_shr(shift as u32),
+            self.mask.wrapping_shr(shift as u32),
+        )
+    }
+
+    pub fn ashr_const(&self, k: u64) -> Self {
+        // 处理特殊情况
+        if self.is_bottom() {
+            return *self;
+        }
+        if self.is_top() {
+            return *self;
+        }
+
+        let width = 64; // 固定位宽
+        let shift = k % width as u64; // 确保移位值在范围内，模拟 wrapint(k, w)
+
+        // 获取符号位
+        let vsig = (self.value >> 63) & 1 == 1;
+        let msig = (self.mask >> 63) & 1 == 1;
+
+        // 根据符号位选择不同的移位策略
+        if !vsig && !msig {
+            // 都是非负数，使用逻辑右移
+            Self::new(
+                self.value.wrapping_shr(shift as u32),
+                self.mask.wrapping_shr(shift as u32),
+            )
+        } else if vsig && !msig {
+            // value 是负数但 mask 非负
+            Self::new(
+                ((self.value as i64).wrapping_shr(shift as u32)) as u64,
+                self.mask.wrapping_shr(shift as u32),
+            )
+        } else {
+            // 其他情况
+            Self::new(
+                self.value.wrapping_shr(shift as u32),
+                ((self.mask as i64).wrapping_shr(shift as u32)) as u64,
+            )
+        }
+    }
+
+    pub fn le(&self, other: &Tnum) -> bool {
+        // 修改参数类型为 &Tnum
+        if other.is_top() || self.is_bottom() {
+            return true;
+        } else if other.is_bottom() || self.is_top() {
+            return false;
+        } else if self.value == other.value && self.mask == other.mask {
+            return true;
+        } else if (self.mask & (!other.mask)) != 0 {
+            // self[i] 未知但 other[i] 已知
+            return false;
+        } else {
+            return (self.value & (!other.mask)) == other.value;
+        }
+    }
+
+    /// 等价关系判断（==）
+    pub fn eq(&self, other: &Tnum) -> bool {
+        // 修改参数类型为 &Tnum
+        self.le(other) && other.le(self)
+    }
+
+    pub fn or(&self, other: &Tnum) -> Tnum {
+        if self.le(other) {
+            return *other;
+        } else if other.le(self) {
+            return *self;
+        } else {
+            let mu = self.mask | other.mask;
+            let this_know = self.value & (!mu);
+            let x_know = other.value & (!mu);
+            let disagree = this_know ^ x_know;
+
+            Tnum::new(this_know & x_know, mu | disagree)
+        }
+    }
+
+    pub fn and(&self, other: &Tnum) -> Tnum {
+        // 修改参数类型为 &Tnum
+        // 检查偏序关系
+        if self.le(other) {
+            return *self;
+        } else if other.le(self) {
+            return *other;
+        }
+
+        let mu1 = self.mask & other.mask;
+        let mu2 = self.mask | other.mask;
+        let this_known_v = self.value & (!mu2);
+        let x_known_v = other.value & (!mu2);
+        let disagree = this_known_v ^ x_known_v;
+
+        if disagree != 0 {
+            return Tnum::bottom();
+        }
+
+        Tnum::new((self.value | other.value) & (!mu1), mu1)
+    }
 }
+
+pub fn rem_get_low_bits(lhs: &Tnum, rhs: &Tnum) -> Tnum {
+        let w = 64u8; // 固定位宽为64
+
+        // 检查 RHS 是否为零，以及 value 和 mask 是否都是偶数
+        if !rhs.is_zero() && (rhs.value & 1) == 0 && (rhs.mask & 1) == 0 {
+            let qzero = rhs.count_min_trailing_zeros();
+
+            // 注意：原C++代码中 if(qzero = 0) 是赋值操作，这里应该是比较
+            if qzero == 0 {
+                return Tnum::top();
+            }
+
+            // 创建掩码：((1 << (qzero - 1)) - 1)
+            let mask = if qzero > 1 {
+                (1u64 << (qzero - 1)) - 1
+            } else {
+                0u64
+            };
+
+            let res_value = lhs.value & mask;
+            let res_mask = lhs.mask & mask;
+            let res = Tnum::new(res_value, res_mask);
+
+            return res;
+        }
+
+        Tnum::top()
+    }

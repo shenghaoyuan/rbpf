@@ -143,17 +143,23 @@ int main(int argc, char *argv[]) {
             } else if (strcmp(operation, "urem") == 0) {
                 cpp_result = tnum_a.URem(tnum_b);
             } else if (strcmp(operation, "and") == 0) {
-                cpp_result = tnum_a.And(tnum_b);
+                cpp_result = tnum_a & tnum_b;
             } else if (strcmp(operation, "or") == 0) {
-                cpp_result = tnum_a.Or(tnum_b);
+                cpp_result = tnum_a | tnum_b;
             } else if (strcmp(operation, "xor") == 0) {
                 cpp_result = tnum_a.Xor(tnum_b); 
             } else if (strcmp(operation, "not") == 0) {
                 cpp_result = ~tnum_a; 
-            } else if (strcmp(operation, "lshift") == 0) {
-                cpp_result = tnum_a.Shl(tnum_b.value().get_uint64_t() & 0xff);  // 使用 Shl
-            } else if (strcmp(operation, "rshift") == 0) {
-                cpp_result = tnum_a.LShr(tnum_b.value().get_uint64_t() & 0xff);  // 使用 LShr
+            } else if (strcmp(operation, "lshr_const") == 0) {
+                cpp_result = tnum_a.LShr(tnum_b.value().get_uint64_t());
+            } else if (strcmp(operation, "shl_const") == 0) {
+                cpp_result = tnum_a.Shl(tnum_b.value().get_uint64_t());
+            } else if (strcmp(operation, "ashr_const") == 0) {
+                cpp_result = tnum_a.AShr(tnum_b.value().get_uint64_t());
+            } else if (strcmp(operation, "lshr") == 0) {
+                cpp_result = tnum_a.LShr(tnum_b);
+            } else if (strcmp(operation, "shl") == 0) {
+                cpp_result = tnum_a.Shl(tnum_b);
             } else if (strcmp(operation, "eq") == 0) {
                 cpp_result = crab::domains::tnum<DummyNumber>(crab::wrapint((tnum_a == tnum_b ? 1 : 0), width), crab::wrapint(0, width));
             } else if (strcmp(operation, "ne") == 0) {
@@ -180,10 +186,16 @@ int main(int argc, char *argv[]) {
         
         struct json_object *cpp_output_obj = json_object_new_object();
 
-        if (cpp_result.is_bottom() || cpp_result.is_top()) {
-            json_object_object_add(cpp_output_obj, "value", json_object_new_uint64(1));
-            json_object_object_add(cpp_output_obj, "mask", json_object_new_uint64(1));
+        if (cpp_result.is_top()) {
+            // Top: 完全不确定 - value = 0, mask = 0xFFFFFFFFFFFFFFFF
+            json_object_object_add(cpp_output_obj, "value", json_object_new_uint64(0));
+            json_object_object_add(cpp_output_obj, "mask", json_object_new_uint64(0xFFFFFFFFFFFFFFFF));
+        } else if (cpp_result.is_bottom()) {
+            // Bottom: 不可能的值 - value = 0xFFFFFFFFFFFFFFFF, mask = 0xFFFFFFFFFFFFFFFF
+            json_object_object_add(cpp_output_obj, "value", json_object_new_uint64(0xFFFFFFFFFFFFFFFF));
+            json_object_object_add(cpp_output_obj, "mask", json_object_new_uint64(0xFFFFFFFFFFFFFFFF));
         } else {
+            // 正常情况：输出实际的 value 和 mask
             json_object_object_add(cpp_output_obj, "value", json_object_new_uint64(cpp_result.value().get_uint64_t()));
             json_object_object_add(cpp_output_obj, "mask", json_object_new_uint64(cpp_result.mask().get_uint64_t()));
         }
@@ -210,4 +222,4 @@ int main(int argc, char *argv[]) {
     free(json_str);
 
     return 0;
-} 
+}

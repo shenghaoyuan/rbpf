@@ -59,8 +59,8 @@ fn run_rust_test(
 
 fn random_tnum() -> Tnum {
     let mut rng = thread_rng();
-    let rawa: u64 = rng.gen::<u64>() % 256;
-    let rawb: u64 = rng.gen::<u64>() % 256;
+    let rawa: u64 = rng.gen::<u64>()%64;
+    let rawb: u64 = rng.gen::<u64>()%64;
     Tnum::new(rawa, (rawa & rawb) ^ rawb)
 }
 
@@ -95,8 +95,11 @@ fn main() {
         ("or", Box::new(|a, b| a.or(b))),
         ("xor", Box::new(|a, b| a.xor(b))),
         ("not", Box::new(|a, _| a.not())),
-        ("lshift", Box::new(|a, b| a.lshift(b.value() as u8))),
-        ("rshift", Box::new(|a, b| a.rshift(b.value() as u8))),
+        ("lshr_const", Box::new(|a, b| a.lshr_const(b.value()))),
+        ("shl_const", Box::new(|a, b| a.shl_const(b.value()))),
+        ("ashr_const", Box::new(|a, b| a.ashr_const(b.value()))),
+        ("lshr", Box::new(|a, b| a.lshr(&b))),
+        ("shl", Box::new(|a, b| a.shl(&b))),
         ("eq", Box::new(|a, b| if a.contains(b) && b.contains(a) { Tnum::const_val(1) } else { Tnum::const_val(0) })),
         ("ne", Box::new(|a, b| if a.contains(b) && b.contains(a) { Tnum::const_val(0) } else { Tnum::const_val(1) })),
         ("gt", Box::new(|a, b| if a.is_nonnegative() && b.is_negative() { Tnum::const_val(1) } else { Tnum::const_val(0) })),

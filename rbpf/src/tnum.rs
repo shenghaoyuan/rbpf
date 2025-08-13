@@ -632,7 +632,10 @@ impl Tnum {
 
         // 处理单点值情况
         if self.is_singleton() && other.is_singleton() {
-            let res_single = Tnum::new((self.value as i64).wrapping_rem(other.value as i64) as u64,0);
+            let res_single = Tnum::new(
+                (self.value as i64).wrapping_rem(other.value as i64) as u64,
+                0,
+            );
             return res_single;
         }
 
@@ -679,6 +682,7 @@ impl Tnum {
             return Self::top(); // 除以0返回top
         }
 
+        let mut res = rem_get_low_bits(self, &other);
         // 处理低位
         // 检查除数是否为 2 的幂
         if other.mask == 0
@@ -697,46 +701,9 @@ impl Tnum {
         let leading_zeros = self
             .count_min_leading_zeros()
             .max(other.count_min_leading_zeros());
-        let mut res = Self::top(); // 先创建一个top
         res.clear_high_bits(leading_zeros);
 
-        return res;
-    }
-
-    /// 模运算（Mod），结果总是非负
-    pub fn mod_op(&self, other: Self) -> Self {
-        // 处理特殊情况
-        if self.is_bottom() || other.is_bottom() {
-            return Self::bottom();
-        } else if self.is_top() || other.is_top() {
-            return Self::top();
-        }
-
-        // 处理除数为0的情况
-        if other.value == 0 {
-            return Self::top();
-        }
-
-        // 对于非负数，mod 等同于 urem
-        if self.is_nonnegative() {
-            return self.urem(other);
-        }
-
-        // 对于负数，计算 srem 然后处理负结果
-        let rem = self.srem(other);
-
-        // 如果结果可能为负（并且除数非负），需要调整
-        if rem.is_negative() && other.is_nonnegative() {
-            // 如果除数是确定值，直接加上除数
-            if other.is_singleton() {
-                return rem.add(other);
-            } else {
-                // 结果范围：原来的结果和原来的结果加上除数
-                return rem.join(rem.add(other));
-            }
-        }
-
-        return rem;
+        res
     }
 
     /// 有符号除法操作
@@ -745,11 +712,10 @@ impl Tnum {
             return Self::bottom();
         }
 
+        let w = 64;
+
         if self.is_singleton() && other.is_singleton() {
-            if other.value == 0 {
-                return Self::top();
-            }
-            return Self::const_val((self.value as i64).wrapping_div(other.value as i64) as u64);
+            return Tnum::new(self.value.wrapping_div(other.value), 0);
         }
 
         if self.is_nonnegative() && other.is_nonnegative() {
@@ -757,48 +723,44 @@ impl Tnum {
         }
 
         let mut result = Self::top();
-        let mut tmp: u64 = 0;
+        let mut tmp: i64 = 0;
 
         if self.is_negative() && other.is_negative() {
-            // Result is non-negative
-            if self.value == i64::MIN as u64 && other.is_singleton() && other.value == -1i64 as u64
-            {
-                return Self::top(); // overflow
+            if self.value == i64::MIN as u64 && other.is_singleton() && other.value == u64::MAX {
+                return Self::top();
             }
 
             let denom = other.get_signed_max_value();
             let num = self.get_signed_min_value();
 
-            if !(num == i64::MIN as u64 && denom == -1i64 as u64) {
-                tmp = (num as i64).wrapping_div(denom as i64) as u64;
+            if !(num == i64::MIN as u64 && denom == i64::MAX as u64) {
+                tmp = (num as i64).wrapping_div(denom as i64);
             } else {
-                tmp = i64::MAX as u64;
+                tmp = i64::MAX;
             }
         } else if self.is_negative() && other.is_nonnegative() {
             // Result is negative if -LHS u>= RHS
-            let neg_lhs_max = (self.get_signed_max_value() as i64).wrapping_neg() as u64;
-            if neg_lhs_max >= other.get_signed_max_value() {
+            let neg_lhs_max: i64 = (self.get_signed_max_value() as i64).wrapping_neg();
+            if neg_lhs_max >= other.get_signed_max_value() as i64 {
                 let denom = other.get_signed_min_value();
                 let num = self.get_signed_min_value();
-                tmp = (num as i64).wrapping_div(denom as i64) as u64;
+                tmp = (num as i64).wrapping_div(denom as i64);
             }
         } else if self.is_nonnegative() && other.is_negative() {
             // Result is negative if LHS u>= -RHS
-            let neg_rhs_min = (other.get_signed_min_value() as i64).wrapping_neg() as u64;
-            if self.get_signed_min_value() >= neg_rhs_min {
+            let neg_rhs_min = (other.get_signed_min_value() as i64).wrapping_neg();
+            if self.get_signed_min_value() >= neg_rhs_min as u64 {
                 let denom = other.get_signed_max_value();
                 let num = self.get_signed_max_value();
-                tmp = (num as i64).wrapping_div(denom as i64) as u64;
+                tmp = (num as i64).wrapping_div(denom as i64);
             }
         }
 
         if tmp != 0 {
             if (tmp >> 63) & 1 == 0 {
-                // non-negative
                 let lead_zeros = tmp.leading_zeros();
                 result.clear_high_bits(lead_zeros);
             } else {
-                // negative
                 let lead_ones = (!tmp).leading_zeros();
                 if lead_ones > 0 {
                     let high_mask = u64::MAX << (64 - lead_ones);
@@ -819,13 +781,12 @@ impl Tnum {
             return Self::top();
         }
 
-        if other.value == 0 && other.is_singleton() {
-            return Self::top();
-        }
+        let w = 64;
 
-        if self.is_singleton() && other.is_singleton() {
-            let val = (self.value as i64).wrapping_div(other.value as i64);
-            return Self::new(val as u64, 0);
+        if other.value == 0 {
+            return Self::top();
+        } else if (self.mask == 0 && other.mask == 0) {
+            return Self::new(self.value.wrapping_div(other.value), 0);
         }
 
         let t0 = self.get_zero_circle();
@@ -838,7 +799,7 @@ impl Tnum {
         let res10 = t1.signed_div(x0);
         let res11 = t1.signed_div(x1);
 
-        res00.join(res01).join(res10).join(res11)
+        res00.or(&res01).or(&res10).or(&res11)
     }
 
     fn get_signed_min_value(&self) -> u64 {
@@ -857,14 +818,38 @@ impl Tnum {
         }
     }
 
-    fn get_zero_circle(&self) -> Self {
-        let new_mask = self.mask | (self.mask >> 1);
-        Self::new(self.value & !new_mask, new_mask)
+    pub fn get_zero_circle(&self) -> Self {
+        let width = 64;
+        let sign_max = i64::MAX;
+        let value = self.value as i64;
+        let mask = self.mask as i64;
+        if value & (1i64 << 63) != 0 {
+            return Tnum::new(sign_max as u64, sign_max as u64);
+        } else if mask & (1i64 << 63) != 0 {
+            return Tnum::new(value as u64, (mask & sign_max) as u64);
+        } else {
+            return *self;
+        }
     }
 
-    fn get_one_circle(&self) -> Self {
-        let new_mask = self.mask | (self.mask >> 1);
-        Self::new((self.value | self.mask) & !new_mask, new_mask)
+    pub fn get_one_circle(&self) -> Self {
+        let value = self.value as i64;
+        let mask = self.mask as i64;
+        let width = 64;
+        let sign_max = i64::MAX;
+        let sign_min = i64::MIN;
+        let unsign_max = u64::MAX;
+        if value &(1i64 << 63) != 0 {
+            return *self;
+        }else if mask &(1i64 << 63) != 0 {
+            let mut value = value;
+            value |= (1i64<<63);
+            let mut mask = mask;
+            mask &= !(1i64<<63);
+            return Tnum::new(value as u64,mask as u64);
+        }else {
+            return Tnum::new(unsign_max,unsign_max);
+        }
     }
 
     /// 无符号除法操作
@@ -877,26 +862,28 @@ impl Tnum {
             return Self::top();
         }
 
-        // 检查除数是否为0
-        if other.value == 0 {
+        let w = 64;
+        let flag: bool = (other.value == 0);
+        if flag {
+            // 处理除数为0的情况
             return Self::top();
+        } else {
+            let mut Res = Tnum::top();
+            let MaxRes = match (self.value + self.mask).checked_div(other.value) {
+                // 如果除法成功，返回包含结果的新 Tnum
+                Some(result) => result,
+                // 如果除以零，checked_div 返回 None，我们返回 top
+                None => return Self::top(),
+            };
+            let leadz = MaxRes.leading_zeros();
+            Res.value.clear_high_bits(leadz);
+            Res.mask.clear_high_bits(leadz);
+            if (leadz == 64) {
+                return Res;
+            }
+            let result = self.div_compute_low_bit(Res, other);
+            return result;
         }
-
-        // 创建初始结果为top
-        let mut result = Self::top();
-
-        // 计算结果的上界
-        let max_res = self.value.wrapping_add(self.mask).wrapping_div(other.value);
-
-        // 确定前导位
-        let lead_zeros = max_res.leading_zeros();
-
-        if lead_zeros < 64 {
-            result.clear_high_bits(lead_zeros);
-        }
-
-        // 确定低位
-        self.div_compute_low_bit(result, other)
     }
 
     fn div_compute_low_bit(&self, mut result: Self, other: Self) -> Self {
@@ -912,20 +899,13 @@ impl Tnum {
             self.count_max_trailing_zeros() as i32 - other.count_min_trailing_zeros() as i32;
 
         if min_tz >= 0 {
-            // 结果至少有min_tz个尾随零
-            let min_tz_u32 = min_tz as u32;
-            if min_tz_u32 < 64 {
-                let min_tz_mask = !((1u64 << min_tz_u32) - 1);
-                result.value &= min_tz_mask; // 清除低位
-                result.mask &= min_tz_mask; // 清除低位的掩码
-            }
+            result.value.clear_low_bits(min_tz as u32);
+            result.mask.clear_low_bits(min_tz as u32);
 
             if min_tz == max_tz {
-                if min_tz_u32 < 64 {
-                    // 结果恰好有min_tz个尾随零
-                    result.value |= 1u64 << min_tz_u32; // 设置第min_tz位为1
-                    result.mask &= !(1u64 << min_tz_u32); // 清除第min_tz位的掩码
-                }
+                // 结果恰好有min_tz个尾随零
+                result.value |= 1u64 << min_tz; // 设置第min_tz位为1
+                result.mask &= !(1u64 << min_tz); // 清除第min_tz位的掩码
             }
         }
 

@@ -1,0 +1,3 @@
+[submodule "clam"]
+	path = clam
+	url = git@github.com:ADSWT518/clam.git

@@ -18,10 +18,10 @@ RUN apt-get update && apt-get install -y \
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 ENV PATH="/root/.cargo/bin:${PATH}"
 
-# 编译 clam-master
+# 编译 clam
 WORKDIR /opt
-COPY ../clam-master /opt/clam-master
-WORKDIR /opt/clam-master
+COPY ../clam /opt/clam
+WORKDIR /opt/clam
 RUN mkdir build && cd build \
     && cmake -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_C_COMPILER=clang \
@@ -35,4 +35,4 @@ WORKDIR /workspace
 
 # 添加说明
 RUN echo "Docker environment for rbpf tnum testing" > /README.md
-RUN echo "Contains clam-master for tnum implementation comparison" >> /README.md 
+RUN echo "Contains clam for tnum implementation comparison" >> /README.md 

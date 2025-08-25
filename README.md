@@ -14,7 +14,7 @@
 
 ### 安装 clam
 ```shell
-cd clam-master
+cd clam
 sudo apt-get install libboost-all-dev libboost-program-options-dev
 sudo apt-get install libgmp-dev
 sudo apt-get install libmpfr-dev	
@@ -39,19 +39,30 @@ sudo cmake --build . --target install
           ├──tnum_test.cpp
           ├──tnum_test.rs
        ├──...
-    ├──clam-master
+    ├──clam
 ```
 
 ### 工作流
 - 生成 Rust 测试用例: 首先会运行 Rust 的测试程序 (tnum_test.rs) 来随机生成一系列测试用例。这些用例以及 Rust 实现的运算结果将被保存到 tests/build/rust_test_cases.json 文件中。
 
-- 编译 CLAM 库: 脚本首先会自动进入 ../clam-master 目录，使用 cmake 和 make 编译生成 C++ 基准测试所依赖的静态库 libCrab.a。
+- 编译 CLAM 库: 脚本首先会自动进入 ../clam 目录，使用 cmake 和 make 编译生成 C++ 基准测试所依赖的静态库 libCrab.a。
 
 - 运行 C++ 基准测试: 然后，框架会编译并运行 C++ 的测试程序 (tnum_test.cpp)。该程序会加载上一步生成的 rust_test_cases.json，执行完全相同的运算，并将 C++ 实现的结果输出到 tests/build/cpp_test_results.json。
 
 - 比较和验证: 最后，运行另一个 Rust 程序 (compare)，它会逐一对比两个 JSON 文件中的结果。如果所有结果都一致，则测试通过；否则，它会报告差异，结果保存在`./rbpf/tests/build`下。
 
 ### 使用方法
+
+#### 拉取子模块
+
+```
+git submodule update --init --recursive
+```
+
+#### 构建项目
+
+> 可参考 [./clam/README_NEW.md](./clam/README_NEW.md)
+
 首先到rbpf目录下
 ```
 cd ./rbpf
@@ -60,7 +71,7 @@ cd ./rbpf
 ```
 make rust-test
 ```
-运行clam-master下的Tnum作为基准测试（这一步编译会很慢）
+运行clam下的Tnum作为基准测试（这一步编译会很慢）
 ```
 make cpp-test
 ```

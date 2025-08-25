@@ -1,2 +1,0 @@
-/usr/bin/ar Dqc ../../../../lib/libSeaLoops.a CMakeFiles/SeaLoops.dir/IndVarSimplify.cc.o CMakeFiles/SeaLoops.dir/FakeLatchExit.cc.o CMakeFiles/SeaLoops.dir/SeaSCEVUtils.cc.o CMakeFiles/SeaLoops.dir/LoopRotation.cc.o CMakeFiles/SeaLoops.dir/LoopUnrollPass.cc.o
-/usr/bin/ranlib -D ../../../../lib/libSeaLoops.a

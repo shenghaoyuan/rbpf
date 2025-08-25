@@ -1,1 +1,0 @@
-add_llvm_library(SeaInstNondet DISABLE_LLVM_LINK_LLVM_DYLIB NondetInit.cc)

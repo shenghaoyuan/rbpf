@@ -1,2 +1,0 @@
-/usr/bin/ar Dqc ../../../../lib/libSeaLlvmIpo.a CMakeFiles/SeaLlvmIpo.dir/PassManagerBuilder.cpp.o CMakeFiles/SeaLlvmIpo.dir/Annotation2Metadata.cpp.o CMakeFiles/SeaLlvmIpo.dir/LoopExtractor.cpp.o
-/usr/bin/ranlib -D ../../../../lib/libSeaLlvmIpo.a

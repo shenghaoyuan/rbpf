@@ -1,7 +1,0 @@
-digraph functioncalls {
-rankdir=LR;
-
-main [shape="box", color=blue];
-nd_char [label="nd_char", shape="box", color=grey];
-main -> nd_char;
-}

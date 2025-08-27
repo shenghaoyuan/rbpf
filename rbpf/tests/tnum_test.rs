@@ -59,8 +59,8 @@ fn run_rust_test(
 
 fn random_tnum() -> Tnum {
     let mut rng = thread_rng();
-    let rawa: u64 = rng.gen::<u64>()%64;
-    let rawb: u64 = rng.gen::<u64>()%64;
+    let rawa: u64 = rng.gen::<u64>()%u64::MAX/2;
+    let rawb: u64 = rng.gen::<u64>()%u64::MAX/2;
     Tnum::new(rawa, (rawa & rawb) ^ rawb)
 }
 
@@ -91,8 +91,8 @@ fn main() {
         ("udiv", Box::new(|a, b| a.udiv(b))),
         ("srem", Box::new(|a, b| a.srem(b))),
         ("urem", Box::new(|a, b| a.urem(b))),
-        ("and", Box::new(|a, b| a.and(b))),
-        ("or", Box::new(|a, b| a.or(b))),
+        ("and", Box::new(|a, b| a.and(&b))),
+        ("or", Box::new(|a, b| a.or(&b))),
         ("xor", Box::new(|a, b| a.xor(b))),
         ("not", Box::new(|a, _| a.not())),
         ("lshr_const", Box::new(|a, b| a.lshr_const(b.value()))),

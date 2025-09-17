@@ -34,6 +34,15 @@ struct AtTestCase {
     results: Vec<AtMethodResult>,
 }
 
+/// 比较方法测试用例（返回布尔值）
+#[derive(Debug, Serialize, Deserialize)]
+struct ComparisonTestCase {
+    operation: String,
+    input_a: TestWrappedInterval,
+    input_b: TestWrappedInterval,
+    results: Vec<ComparisonMethodResult>,
+}
+
 /// 测试方法结果结构
 #[derive(Debug, Serialize, Deserialize)]
 struct MethodResult {
@@ -45,6 +54,14 @@ struct MethodResult {
 /// at方法结果结构
 #[derive(Debug, Serialize, Deserialize)]
 struct AtMethodResult {
+    method: String,
+    output: bool,
+    avg_time_ns: f64,
+}
+
+/// 比较方法结果结构
+#[derive(Debug, Serialize, Deserialize)]
+struct ComparisonMethodResult {
     method: String,
     output: bool,
     avg_time_ns: f64,
@@ -102,6 +119,29 @@ fn run_rust_at_test(
     }
 }
 
+fn run_rust_comparison_test(
+    method_name: &str,
+    op_fn: &dyn Fn(&WrappedRange, &WrappedRange) -> bool,
+    a: &WrappedRange,
+    b: &WrappedRange,
+    iterations: usize,
+) -> ComparisonMethodResult {
+    let mut times = Vec::with_capacity(iterations);
+    let mut result = false;
+
+    for _ in 0..iterations {
+        let start = Instant::now();
+        result = op_fn(a, b);
+        times.push(start.elapsed().as_nanos());
+    }
+
+    ComparisonMethodResult {
+        method: method_name.to_string(),
+        output: result,
+        avg_time_ns: times.iter().sum::<u128>() as f64 / iterations as f64,
+    }
+}
+
 fn random_wrapped_interval() -> WrappedRange {
     let mut rng = thread_rng();
     let bitwidth = 64u32;
@@ -133,12 +173,14 @@ fn main() {
     );
     let mut test_cases = Vec::new();
     let mut at_test_cases = Vec::new();
+    let mut comparison_test_cases = Vec::new();
 
     let operations: Vec<(&str, Box<dyn Fn(&WrappedRange, &WrappedRange) -> WrappedRange>)> = vec![
         ("add", Box::new(|a, b| a.add(b))),
         ("sub", Box::new(|a, b| a.sub(b))),
         ("unsigned_mul", Box::new(|a, b| a.unsigned_mul(b))),
         ("signed_mul", Box::new(|a, b| a.signed_mul(b))),
+        ("mul", Box::new(|a, b| a.mul(b))),
         // ("udiv", Box::new(|a, b| a.udiv(b))),
         // ("sdiv", Box::new(|a, b| a.sdiv(b))),
         // ("urem", Box::new(|a, b| a.urem(b))),
@@ -153,6 +195,10 @@ fn main() {
         // ("join", Box::new(|a, b| a.generalized_join(b))),
         // ("widening", Box::new(|a, b| a.widening_join(b))),
         // ("narrowing", Box::new(|a, b| a.narrowing(b))),
+    ];
+
+    let comparison_operations: Vec<(&str, Box<dyn Fn(&WrappedRange, &WrappedRange) -> bool>)> = vec![
+        ("less_or_equal", Box::new(|a, b| a.less_or_equal(b))),
     ];
 
     for _ in 0..n {
@@ -188,6 +234,36 @@ fn main() {
             });
         }
 
+        // 添加比较方法测试
+        for (comp_name, comp_fn) in &comparison_operations {
+            let mut comp_results = Vec::new();
+            let rust_comp_result = run_rust_comparison_test(
+                &format!("Rust_{}", comp_name),
+                comp_fn.as_ref(),
+                &a,
+                &b,
+                iterations,
+            );
+            comp_results.push(rust_comp_result);
+
+            comparison_test_cases.push(ComparisonTestCase {
+                operation: comp_name.to_string(),
+                input_a: TestWrappedInterval {
+                    start: a.lb(),
+                    end: a.ub(),
+                    bitwidth: a.width(),
+                    is_bottom: a.is_bottom(),
+                },
+                input_b: TestWrappedInterval {
+                    start: b.lb(),
+                    end: b.ub(),
+                    bitwidth: b.width(),
+                    is_bottom: b.is_bottom(),
+                },
+                results: comp_results,
+            });
+        }
+
         // 添加 at 方法测试
         let test_value = b.lb(); // 使用 b 的下界作为测试值
         let mut at_results = Vec::new();
@@ -212,16 +288,18 @@ fn main() {
         });
     }
 
-    // 创建包含两种测试类型的JSON输出
+    // 创建包含三种测试类型的JSON输出
     #[derive(Serialize)]
     struct AllTestCases {
         binary_operations: Vec<TestCase>,
         at_operations: Vec<AtTestCase>,
+        comparison_operations: Vec<ComparisonTestCase>,
     }
 
     let all_tests = AllTestCases {
         binary_operations: test_cases,
         at_operations: at_test_cases,
+        comparison_operations: comparison_test_cases,
     };
 
     let json = serde_json::to_string_pretty(&all_tests).unwrap();

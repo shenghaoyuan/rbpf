@@ -10,7 +10,7 @@ trait MsbCheck {
 }
 
 /// 表示一个带位宽的环绕区间 [lb, ub]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct WrappedRange {
     /// 基础范围
     base: BaseRange,
@@ -21,7 +21,7 @@ pub struct WrappedRange {
 }
 
 /// 基础范围类型
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct BaseRange {
     /// 变量标识符(可以为空)
     var: Option<String>,
@@ -108,6 +108,16 @@ impl WrappedRange {
         self.base.lb
     }
 
+    /// 获取下界
+    pub fn lb(&self) -> u64 {
+        self.base.lb
+    }
+
+    /// 获取上界
+    pub fn ub(&self) -> u64 {
+        self.base.ub
+    }
+
     /// 获取结束值
     pub fn get_end(&self) -> u64 {
         self.base.ub
@@ -188,16 +198,6 @@ impl WrappedRange {
     /// 检查是否为 top (对应 C++ 的 IsTop)
     pub fn is_top(&self) -> bool {
         self.base.is_top
-    }
-
-    /// 获取下界
-    pub fn lb(&self) -> u64 {
-        self.base.lb
-    }
-
-    /// 获取上界
-    pub fn ub(&self) -> u64 {
-        self.base.ub
     }
 
     /// 获取位宽
@@ -866,6 +866,43 @@ impl WrappedRange {
         res
     }
 
+    /// 精确交集运算
+    /// 如果 out 为空，则交集为空
+    pub fn exact_meet(&self, x: &Self, out: &mut Vec<WrappedRange>) {
+        if self.is_bottom() || x.is_bottom() {
+            // bottom
+            return;
+        } else if *self == *x || self.is_top() {
+            out.push(x.clone());
+        } else if x.is_top() {
+            out.push(self.clone());
+        } else if x.at(self.base.lb) && x.at(self.base.ub) && self.at(x.base.lb) && self.at(x.base.ub) {
+            out.push(Self::new_bounds(self.base.lb, x.base.ub, self.base.width));
+            out.push(Self::new_bounds(x.base.lb, self.base.ub, self.base.width));
+        } else if x.at(self.base.lb) && x.at(self.base.ub) {
+            out.push(self.clone());
+        } else if self.at(x.base.lb) && self.at(x.base.ub) {
+            out.push(x.clone());
+        } else if x.at(self.base.lb) && self.at(x.base.ub) && !x.at(self.base.ub) && self.at(x.base.lb) {
+            out.push(Self::new_bounds(self.base.lb, x.base.ub, self.base.width));
+        } else if x.at(self.base.ub) && self.at(x.base.lb) && !x.at(self.base.lb) && self.at(x.base.ub) {
+            out.push(Self::new_bounds(x.base.lb, self.base.ub, self.base.width));
+        } else {
+            // bottom - out 保持为空
+        }
+    }
+
+    pub fn reduced_signed_unsigned_mul(&self, x: &Self, out: &mut Vec<WrappedRange>) {
+        if self.is_bottom() || x.is_bottom() {
+            return;
+        }
+
+        let s = self.signed_mul(x);
+        let u = self.unsigned_mul(x);
+        s.exact_meet(&u, out);
+        
+    }
+
     /// 有符号乘法
     pub fn signed_mul(&self, x: &Self) -> Self {
         assert!(!self.is_bottom() && !x.is_bottom());
@@ -915,7 +952,9 @@ impl WrappedRange {
                 let x_end_bignum = x.base.ub as u128;
                 let unsigned_max = Self::get_unsigned_max(width) as u128;
                 
-                if (m_end_bignum * x_start_bignum) - (m_start_bignum * x_end_bignum) < unsigned_max {
+                let mul1 = m_end_bignum * x_start_bignum;
+                let mul2 = m_start_bignum * x_end_bignum;
+                if mul1 >= mul2 && mul1 - mul2 < unsigned_max {
                     res = Self::new_bounds(
                         self.base.lb.wrapping_mul(x.base.ub),
                         self.base.ub.wrapping_mul(x.base.lb),
@@ -930,7 +969,9 @@ impl WrappedRange {
                 let x_end_bignum = x.base.ub as u128;
                 let unsigned_max = Self::get_unsigned_max(width) as u128;
                 
-                if (m_start_bignum * x_end_bignum) - (m_end_bignum * x_start_bignum) < unsigned_max {
+                let mul1 = m_start_bignum * x_end_bignum;
+                let mul2 = m_end_bignum * x_start_bignum;
+                if mul1 >= mul2 && mul1 - mul2 < unsigned_max {
                     res = Self::new_bounds(
                         self.base.ub.wrapping_mul(x.base.lb),
                         self.base.lb.wrapping_mul(x.base.ub),
@@ -941,6 +982,38 @@ impl WrappedRange {
         }
         
         res
+    }
+
+    /// 乘法运算
+    pub fn mul(&self, x: &Self) -> Self {
+        if self.is_bottom() || x.is_bottom() {
+            return Self::bottom(self.base.width);
+        }
+        if self.is_top() || x.is_top() {
+            return Self::top(self.base.width);
+        } else {
+            let mut cuts = Vec::new();
+            let mut x_cuts = Vec::new();
+            
+            self.signed_and_unsigned_split(&mut cuts);
+            x.signed_and_unsigned_split(&mut x_cuts);
+            
+            assert!(!cuts.is_empty());
+            assert!(!x_cuts.is_empty());
+
+            let mut res = Self::bottom(self.base.width);
+            for cut in &cuts {
+                for x_cut in &x_cuts {
+                    let mut exact_reduct = Vec::new();
+                    cut.reduced_signed_unsigned_mul(x_cut, &mut exact_reduct);
+                    for interval in exact_reduct {
+                        res = res.or(&interval);
+                    }
+                }
+            }
+
+            res
+        }
     }
 
     // Widening 操作

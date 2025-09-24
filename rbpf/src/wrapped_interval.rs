@@ -7,6 +7,8 @@ use std::cmp::{max, min};
 trait MsbCheck {
     fn is_msb_one(self, width: u32) -> bool;
     fn is_msb_zero(self, width: u32) -> bool;
+    fn wrapping_div_signed(self, rhs: Self, width: u32) -> Self;
+    fn wrapping_div_unsigned(self, rhs: Self, width: u32) -> Self;
 }
 
 /// 表示一个带位宽的环绕区间 [lb, ub]
@@ -50,6 +52,51 @@ impl MsbCheck for u64 {
 
     fn is_msb_zero(self, width: u32) -> bool {
         self & (1 << (width - 1)) == 0
+    }
+
+    fn wrapping_div_signed(self, rhs: Self, width: u32) -> Self {
+        let self_masked = self;
+        let rhs_masked = rhs;
+
+        // 检查除数是否为零
+        if rhs_masked == 0 {
+            panic!("wrapint: signed division by zero");
+        }
+
+        let dividend = get_signed_representation(self_masked, 64);
+        let divisor = get_signed_representation(rhs_masked, 64);
+
+        let result = dividend / divisor;
+
+        result as u64
+    }
+
+    fn wrapping_div_unsigned(self, rhs: Self, width: u32) -> Self {
+        let self_masked = self;
+        let rhs_masked = rhs;
+
+        // 检查除数是否为零
+        if rhs_masked == 0 {
+            panic!("wrapint: unsigned division by zero");
+        }
+
+        // 直接执行无符号除法
+        self_masked / rhs_masked
+    }
+}
+
+fn get_signed_representation(value: u64, width: u32) -> i64 {
+    // 默认64位，简化计算
+    let masked_value = value;
+
+    if masked_value & (1u64 << 63) != 0 {
+        // 负数：执行符号扩展
+        // 直接使用二进制补码的符号扩展
+        let sign_extended = masked_value | (!u64::MAX); // 将高位全部置1
+        sign_extended as i64
+    } else {
+        // 正数：直接转换
+        masked_value as i64
     }
 }
 
@@ -177,8 +224,8 @@ impl WrappedRange {
     /// 获取无符号最大值 1111....1 (对应C++的get_unsigned_max)
     pub fn get_unsigned_max(width: u32) -> u64 {
         match width {
-            8 => 255,      // mod_8 - 1 = 256 - 1
-            16 => 65535,   // mod_16 - 1 = 65536 - 1  
+            8 => 255,         // mod_8 - 1 = 256 - 1
+            16 => 65535,      // mod_16 - 1 = 65536 - 1
             32 => 4294967295, // mod_32 - 1 = 4294967296 - 1
             64 => u64::MAX,
             _ => ((1u64 << width) - 1),
@@ -190,14 +237,15 @@ impl WrappedRange {
         0
     }
 
-    /// 检查是否为 bottom (对应 C++ 的 isBottom)
+    /// 检查是否为 bottom
     pub fn is_bottom(&self) -> bool {
         self.base.is_bottom
     }
 
-    /// 检查是否为 top (对应 C++ 的 IsTop)
+    /// 检查是否为 top
     pub fn is_top(&self) -> bool {
-        self.base.is_top
+        (!self.base.is_bottom
+            && (self.base.ub.wrapping_sub(self.base.lb) == Self::get_unsigned_max(self.base.width)))
     }
 
     /// 获取位宽
@@ -205,8 +253,8 @@ impl WrappedRange {
         self.base.width
     }
 
-    /// 检查是否为常量区间 (对应 C++ 的 isConstant)
-    fn is_constant(&self) -> bool {
+    /// 检查是否为常量区
+    fn is_singleton(&self) -> bool {
         if self.is_bottom() {
             return false;
         }
@@ -369,7 +417,7 @@ impl WrappedRange {
         }
     }
 
-    pub fn unsigned_split(&self, intervals: &mut Vec<WrappedRange>){
+    pub fn unsigned_split(&self, intervals: &mut Vec<WrappedRange>) {
         if self.is_bottom() {
             return;
         }
@@ -378,14 +426,34 @@ impl WrappedRange {
 
         if self.is_top() {
             // 为top情况，分割为两个最大区间
-            intervals.push(Self::new_bounds(i64::MIN as u64, Self::get_unsigned_max(width), width));
-            intervals.push(Self::new_bounds(Self::get_unsigned_min(width), i64::MAX as u64, width));
+            intervals.push(Self::new_bounds(
+                i64::MIN as u64,
+                Self::get_unsigned_max(width),
+                width,
+            ));
+            intervals.push(Self::new_bounds(
+                Self::get_unsigned_min(width),
+                i64::MAX as u64,
+                width,
+            ));
         } else {
             // 检查是否跨越无符号边界 (从最大值环绕到最小值)
-            let unsigned_limit = Self::new_bounds(Self::get_unsigned_max(width), Self::get_unsigned_min(width), width);
+            let unsigned_limit = Self::new_bounds(
+                Self::get_unsigned_max(width),
+                Self::get_unsigned_min(width),
+                width,
+            );
             if unsigned_limit.less_or_equal(self) {
-                intervals.push(Self::new_bounds(self.base.lb, Self::get_unsigned_max(width), width));
-                intervals.push(Self::new_bounds(Self::get_unsigned_min(width), self.base.ub, width));
+                intervals.push(Self::new_bounds(
+                    self.base.lb,
+                    Self::get_unsigned_max(width),
+                    width,
+                ));
+                intervals.push(Self::new_bounds(
+                    Self::get_unsigned_min(width),
+                    self.base.ub,
+                    width,
+                ));
             } else {
                 intervals.push(self.clone());
             }
@@ -399,6 +467,36 @@ impl WrappedRange {
         for interval in ssplit {
             interval.unsigned_split(out);
         }
+    }
+
+    /// 从区间中去除零值，将其分割成不包含零的子区间
+    pub fn trim_zero(&self, out: &mut Vec<WrappedRange>) {
+        let width = self.width();
+        let zero = 0u64;
+
+        if !self.is_bottom() && !self.is_singleton_zero() {
+            if self.base.lb == zero {
+                // 如果起始点是零，返回 [1, end]
+                out.push(WrappedRange::new_bounds(1, self.base.ub, width));
+            } else if self.base.ub == zero {
+                // 如果结束点是零，返回 [start, -1] (即 [start, u64::MAX])
+                let minus_one = Self::get_unsigned_max(width);
+                out.push(WrappedRange::new_bounds(self.base.lb, minus_one, width));
+            } else if self.at(zero) {
+                // 如果零在区间内部，分割成两个区间：[start, -1] 和 [1, end]
+                let minus_one = Self::get_unsigned_max(width);
+                out.push(WrappedRange::new_bounds(self.base.lb, minus_one, width));
+                out.push(WrappedRange::new_bounds(1, self.base.ub, width));
+            } else {
+                // 如果零不在区间内，返回原区间
+                out.push(self.clone());
+            }
+        }
+    }
+
+    /// 检查是否是只包含零的单例区间
+    fn is_singleton_zero(&self) -> bool {
+        !self.is_bottom() && self.base.lb == 0 && self.base.ub == 0
     }
 
     // // /// 在南北极点都分割区间
@@ -490,7 +588,7 @@ impl WrappedRange {
         }
     }
 
-    fn equal(&self, x: &Self) -> bool {
+    pub fn equal(&self, x: &Self) -> bool {
         self.less_or_equal(x) && x.less_or_equal(self)
     }
 
@@ -561,8 +659,6 @@ impl WrappedRange {
     //     }
     // }
 
-
-
     // /// 环绕乘法运算
     // pub fn mul(&mut self, x: &Self)-> Self {
     //     if self.is_bottom()||x.is_bottom(){
@@ -584,11 +680,10 @@ impl WrappedRange {
     //                 res = res.join(&prod);
     //             }
     //         }
-            
+
     //         res
     //     }
     // }
-
 
     // /// 无符号除法
     // fn wrapped_unsigned_division(dividend: &Self, divisor: &Self) -> Self {
@@ -776,7 +871,7 @@ impl WrappedRange {
         } else {
             let x_at_self_lb = x.at(self.base.lb);
             if x_at_self_lb {
-                let self_at_x_lb = self.at(x.base.lb);  
+                let self_at_x_lb = self.at(x.base.lb);
                 if self_at_x_lb {
                     let span_a = self.base.ub.wrapping_sub(self.base.lb);
                     let span_b = x.base.ub.wrapping_sub(x.base.lb);
@@ -795,10 +890,10 @@ impl WrappedRange {
                 }
             } else {
                 let self_at_x_lb = self.at(x.base.lb);
-                
+
                 if self_at_x_lb {
                     let self_at_x_ub = self.at(x.base.ub);
-                    
+
                     if self_at_x_ub {
                         return x.clone();
                     } else {
@@ -840,29 +935,33 @@ impl WrappedRange {
     /// 无符号乘法
     pub fn unsigned_mul(&self, x: &Self) -> Self {
         assert!(!self.is_bottom() && !x.is_bottom());
-        
+
         let width = self.base.width;
         let mut res = Self::top(width);
-        
+
         // 检查乘法是否会溢出
         let m_start_bignum = self.base.lb as u128;
         let m_end_bignum = self.base.ub as u128;
         let x_start_bignum = x.base.lb as u128;
         let x_end_bignum = x.base.ub as u128;
         let unsigned_max = Self::get_unsigned_max(width) as u128;
-        
+
         let prod1 = m_end_bignum * x_end_bignum;
         let prod2 = m_start_bignum * x_start_bignum;
-        let diff = if prod1 > prod2 { prod1 - prod2 } else { prod2 - prod1 };
-        
+        let diff = if prod1 > prod2 {
+            prod1 - prod2
+        } else {
+            prod2 - prod1
+        };
+
         if diff < unsigned_max {
             res = Self::new_bounds(
                 self.base.lb.wrapping_mul(x.base.lb),
                 self.base.ub.wrapping_mul(x.base.ub),
-                width
+                width,
             );
         }
-        
+
         res
     }
 
@@ -876,16 +975,28 @@ impl WrappedRange {
             out.push(x.clone());
         } else if x.is_top() {
             out.push(self.clone());
-        } else if x.at(self.base.lb) && x.at(self.base.ub) && self.at(x.base.lb) && self.at(x.base.ub) {
+        } else if x.at(self.base.lb)
+            && x.at(self.base.ub)
+            && self.at(x.base.lb)
+            && self.at(x.base.ub)
+        {
             out.push(Self::new_bounds(self.base.lb, x.base.ub, self.base.width));
             out.push(Self::new_bounds(x.base.lb, self.base.ub, self.base.width));
         } else if x.at(self.base.lb) && x.at(self.base.ub) {
             out.push(self.clone());
         } else if self.at(x.base.lb) && self.at(x.base.ub) {
             out.push(x.clone());
-        } else if x.at(self.base.lb) && self.at(x.base.ub) && !x.at(self.base.ub) && self.at(x.base.lb) {
+        } else if x.at(self.base.lb)
+            && x.at(self.base.ub)
+            && !x.at(self.base.ub)
+            && self.at(x.base.lb)
+        {
             out.push(Self::new_bounds(self.base.lb, x.base.ub, self.base.width));
-        } else if x.at(self.base.ub) && self.at(x.base.lb) && !x.at(self.base.lb) && self.at(x.base.ub) {
+        } else if x.at(self.base.ub)
+            && self.at(x.base.lb)
+            && !x.at(self.base.lb)
+            && self.at(x.base.ub)
+        {
             out.push(Self::new_bounds(x.base.lb, self.base.ub, self.base.width));
         } else {
             // bottom - out 保持为空
@@ -900,21 +1011,20 @@ impl WrappedRange {
         let s = self.signed_mul(x);
         let u = self.unsigned_mul(x);
         s.exact_meet(&u, out);
-        
     }
 
     /// 有符号乘法
     pub fn signed_mul(&self, x: &Self) -> Self {
         assert!(!self.is_bottom() && !x.is_bottom());
-        
+
         let width = self.base.width;
         let msb_start = self.base.lb.is_msb_one(width);
         let msb_end = self.base.ub.is_msb_one(width);
         let msb_x_start = x.base.lb.is_msb_one(width);
         let msb_x_end = x.base.ub.is_msb_one(width);
-        
+
         let mut res = Self::top(width);
-        
+
         if msb_start == msb_end && msb_end == msb_x_start && msb_x_start == msb_x_end {
             // 两个区间在同一半球
             if !msb_start {
@@ -926,22 +1036,26 @@ impl WrappedRange {
                 let x_start_bignum = x.base.lb as u128;
                 let x_end_bignum = x.base.ub as u128;
                 let unsigned_max = Self::get_unsigned_max(width) as u128;
-                
+
                 let prod1 = m_start_bignum * x_start_bignum;
                 let prod2 = m_end_bignum * x_end_bignum;
-                let diff = if prod1 > prod2 { prod1 - prod2 } else { prod2 - prod1 };
-                
+                let diff = if prod1 > prod2 {
+                    prod1 - prod2
+                } else {
+                    prod2 - prod1
+                };
+
                 if diff < unsigned_max {
                     res = Self::new_bounds(
                         self.base.ub.wrapping_mul(x.base.ub),
                         self.base.lb.wrapping_mul(x.base.lb),
-                        width
+                        width,
                     );
                 }
                 return res;
             }
         }
-        
+
         // 每个区间不能跨越边界：一个区间在不同的半球
         if !(msb_start != msb_end || msb_x_start != msb_x_end) {
             if msb_start && !msb_x_start {
@@ -951,14 +1065,14 @@ impl WrappedRange {
                 let x_start_bignum = x.base.lb as u128;
                 let x_end_bignum = x.base.ub as u128;
                 let unsigned_max = Self::get_unsigned_max(width) as u128;
-                
+
                 let mul1 = m_end_bignum * x_start_bignum;
                 let mul2 = m_start_bignum * x_end_bignum;
                 if mul1 >= mul2 && mul1 - mul2 < unsigned_max {
                     res = Self::new_bounds(
                         self.base.lb.wrapping_mul(x.base.ub),
                         self.base.ub.wrapping_mul(x.base.lb),
-                        width
+                        width,
                     );
                 }
             } else if !msb_start && msb_x_start {
@@ -968,19 +1082,19 @@ impl WrappedRange {
                 let x_start_bignum = x.base.lb as u128;
                 let x_end_bignum = x.base.ub as u128;
                 let unsigned_max = Self::get_unsigned_max(width) as u128;
-                
+
                 let mul1 = m_start_bignum * x_end_bignum;
                 let mul2 = m_end_bignum * x_start_bignum;
                 if mul1 >= mul2 && mul1 - mul2 < unsigned_max {
                     res = Self::new_bounds(
                         self.base.ub.wrapping_mul(x.base.lb),
                         self.base.lb.wrapping_mul(x.base.ub),
-                        width
+                        width,
                     );
                 }
             }
         }
-        
+
         res
     }
 
@@ -994,10 +1108,10 @@ impl WrappedRange {
         } else {
             let mut cuts = Vec::new();
             let mut x_cuts = Vec::new();
-            
+
             self.signed_and_unsigned_split(&mut cuts);
             x.signed_and_unsigned_split(&mut x_cuts);
-            
+
             assert!(!cuts.is_empty());
             assert!(!x_cuts.is_empty());
 
@@ -1015,6 +1129,251 @@ impl WrappedRange {
             res
         }
     }
+
+    /// 有符号除法
+    pub fn signed_div(&self, x: &Self) -> Self {
+        assert!(!x.at(0));
+        assert!(!self.is_bottom() && !x.is_bottom());
+
+        let width = self.width();
+        let msb_start = self.base.lb.is_msb_one(width);
+        let msb_x_start = x.base.lb.is_msb_one(width);
+
+        let smin = Self::get_signed_min(width);
+        let minus_one = Self::get_unsigned_max(width); // -1 in two's complement
+
+        let mut res = Self::top(width);
+
+        if msb_start == msb_x_start {
+            if msb_start {
+                // 两个都是负数
+                // 检查除法是否会溢出
+                if !((self.base.ub == smin && x.base.lb == minus_one)
+                    || (self.base.lb == smin && x.base.ub == minus_one))
+                {
+                    res = Self::new_bounds(
+                        self.base.ub.wrapping_div_signed(x.base.lb, width),
+                        self.base.lb.wrapping_div_signed(x.base.ub, width),
+                        width,
+                    );
+                }
+            } else {
+                // 两个都是正数
+                // 检查除法是否会溢出
+                if !((self.base.lb == smin && x.base.ub == minus_one)
+                    || (self.base.ub == smin && x.base.lb == minus_one))
+                {
+                    res = Self::new_bounds(
+                        self.base.lb.wrapping_div_signed(x.base.ub, width),
+                        self.base.ub.wrapping_div_signed(x.base.lb, width),
+                        width,
+                    );
+                }
+            }
+        } else {
+            if msb_start {
+                // self是负数，x是正数
+                // 检查除法是否会溢出
+                if !((self.base.lb == smin && x.base.lb == minus_one)
+                    || (self.base.ub == smin && x.base.ub == minus_one))
+                {
+                    res = Self::new_bounds(
+                        self.base.lb.wrapping_div_signed(x.base.lb, width),
+                        self.base.ub.wrapping_div_signed(x.base.ub, width),
+                        width,
+                    );
+                }
+            } else {
+                // self是正数，x是负数
+                // 检查除法是否会溢出
+                if !((self.base.ub == smin && x.base.ub == minus_one)
+                    || (self.base.lb == smin && x.base.lb == minus_one))
+                {
+                    res = Self::new_bounds(
+                        self.base.ub.wrapping_div_signed(x.base.ub, width),
+                        self.base.lb.wrapping_div_signed(x.base.lb, width),
+                        width,
+                    );
+                }
+            }
+        }
+
+        res
+    }
+
+    /// 有符号除法操作
+    pub fn sdiv(&self, x: &Self) -> Self {
+        if self.is_bottom() || x.is_bottom() {
+            return Self::bottom(self.width());
+        }
+        if self.is_top() || x.is_top() {
+            return Self::top(self.width());
+        } else {
+            let mut cuts = Vec::new();
+            let mut x_cuts = Vec::new();
+
+            self.signed_and_unsigned_split(&mut cuts);
+            x.signed_and_unsigned_split(&mut x_cuts);
+
+            assert!(!cuts.is_empty());
+            assert!(!x_cuts.is_empty());
+
+            let mut res = Self::bottom(self.width());
+            for cut in &cuts {
+                for x_cut in &x_cuts {
+                    let mut trimmed_divisors = Vec::new();
+                    x_cut.trim_zero(&mut trimmed_divisors);
+                    for divisor in trimmed_divisors {
+                        res = res.or(&cut.signed_div(&divisor));
+                    }
+                }
+            }
+
+            res
+        }
+    }
+
+    pub fn unsigned_div(&self, x: &Self) -> Self {
+        assert!(!x.at(0));
+        assert!(!self.is_bottom() && !x.is_bottom());
+        let res = Self::new_bounds(
+            self.base.lb.wrapping_div_unsigned(x.base.ub, self.width()),
+            self.base.ub.wrapping_div_unsigned(x.base.lb, self.width()),
+            self.width(),
+        );
+        res
+    }
+
+    /// 无符号除法操作
+    pub fn udiv(&self, x: &Self) -> Self {
+        if self.is_bottom() || x.is_bottom() {
+            return Self::bottom(self.width());
+        }
+        if self.is_top() || x.is_top() {
+            return Self::top(self.width());
+        } else {
+            let mut cuts = Vec::new();
+            let mut x_cuts = Vec::new();
+
+            self.signed_split(&mut cuts);
+            x.signed_split(&mut x_cuts);
+
+            assert!(!cuts.is_empty());
+            assert!(!x_cuts.is_empty());
+
+            let mut res = Self::bottom(self.width());
+            for cut in &cuts {
+                for x_cut in &x_cuts {
+                    let mut trimmed_divisors = Vec::new();
+                    x_cut.trim_zero(&mut trimmed_divisors);
+                    for divisor in trimmed_divisors {
+                        res = res.or(&cut.unsigned_div(&divisor));
+                    }
+                }
+            }
+
+            res
+        }
+    }
+
+    pub fn default_implementation(&self, x: &Self) -> Self {
+        if self.is_bottom() || x.is_bottom() {
+            return Self::bottom(self.width());
+        } else {
+            return Self::top(self.width());
+        }
+    }
+
+    pub fn urem(&self, x: &Self) -> Self {
+        self.default_implementation(x)
+    }
+
+    pub fn srem(&self, x: &Self) -> Self {
+        self.default_implementation(x)
+    }
+
+    /// 截断函数
+    pub fn trunc(&self, bits_to_keep: u32) -> Self {
+        if self.is_bottom() || self.is_top() {
+            return self.clone();
+        }
+
+        let w = self.width();
+
+        // 检查高位部分是否相同
+        let start_high = self.lb() >> bits_to_keep;
+        let end_high = self.ub() >> bits_to_keep;
+
+        if start_high == end_high {
+            // 高位相同，可以安全截断
+            let lower_start = self.keep_lower(bits_to_keep);
+            let lower_end = self.ub() & ((1u64 << bits_to_keep) - 1);
+
+            if lower_start <= lower_end {
+                return Self::new_bounds(lower_start, lower_end, bits_to_keep);
+            }
+        } else {
+            // 高位不同，需要检查环绕情况
+            let y = start_high + 1;
+            if y == end_high {
+                let lower_start = self.keep_lower(bits_to_keep);
+                let lower_end = self.ub() & ((1u64 << bits_to_keep) - 1);
+
+                if !(lower_start <= lower_end) {
+                    return Self::new_bounds(lower_start, lower_end, bits_to_keep);
+                }
+            }
+        }
+
+        // 如果无法确定，返回top
+        Self::top(bits_to_keep)
+    }
+
+    /// 保留低位bits_to_keep位的辅助函数
+    fn keep_lower(&self, bits_to_keep: u32) -> u64 {
+        if bits_to_keep >= self.width() {
+            return self.lb();
+        }
+
+        let mask = (1u64 << bits_to_keep) - 1;
+        self.lb() & mask
+    }
+
+    // // 常量左移
+    // pub fn shl_const(&self, k: u64) -> Self {
+    //     if self.is_bottom() {
+    //         return self.clone();
+    //     }
+
+    //     if self.is_top() {
+    //         return self.clone();
+    //     }
+
+    //     let b = self.width();
+    //     let truncated = self.trunc(b - k as u32);
+
+    //     if !truncated.is_top() {
+    //         let start = self.lb() << k;
+    //         let end = self.ub() << k;
+    //         Self::new_bounds(start, end, b)
+    //     } else {
+    //         Self::top(b)
+    //     }
+    // }
+
+    // // 区间左移
+    // pub fn shl(&self, x: &Self) -> Self {
+    //     if self.is_bottom() {
+    //         return self.clone();
+    //     }
+
+    //     // 只有当位移量是单例时才执行
+    //     if x.is_singleton() {
+    //         self.shl_const(x.lb())
+    //     } else {
+    //         Self::top(self.width())
+    //     }
+    // }
 
     // Widening 操作
     // pub fn widening(&mut self, previous_v: &Self, jump_set: &[i64]) {
@@ -1533,70 +1892,6 @@ impl WrappedRange {
     // /// 同半球无符号小于比较
     // fn comparison_ult_same_hemisphere(&self, i1: &Self, i2: &Self) -> bool {
     //     i1.base.lb < i2.base.ub
-    // }
-
-    // /// 有符号小于比较
-    // fn comparison_signed_less_than(&self, i1: &Self, i2: &Self, is_strict: bool) -> bool {
-    //     // 在北极点分割并对所有可能的对进行正常测试
-    //     // 如果有一个为真则返回真
-    //     let s1 = Self::nsplit(i1.base.lb, i1.base.ub, i1.base.width);
-    //     let s2 = Self::nsplit(i2.base.lb, i2.base.ub, i2.base.width);
-
-    //     let mut tmp = false;
-    //     for i1 in s1.iter() {
-    //         for i2 in s2.iter() {
-    //             if is_strict {
-    //                 tmp |= self.comparison_slt_same_hemisphere(i1, i2);
-    //             } else {
-    //                 tmp |= self.comparison_sle_same_hemisphere(i1, i2);
-    //             }
-    //             if tmp {
-    //                 return true;
-    //             }
-    //         }
-    //     }
-    //     tmp
-    // }
-
-    // /// 无符号小于比较
-    // fn comparison_unsigned_less_than(&self, i1: &Self, i2: &Self, is_strict: bool) -> bool {
-    //     let s1 = Self::signed_split(i1.base.lb, i1.base.ub, i1.base.width);
-    //     let s2 = Self::signed_split(i2.base.lb, i2.base.ub, i2.base.width);
-
-    //     let mut tmp = false;
-    //     for i1 in s1.iter() {
-    //         for i2 in s2.iter() {
-    //             if is_strict {
-    //                 tmp |= self.comparison_ult_same_hemisphere(i1, i2);
-    //             } else {
-    //                 tmp |= self.comparison_ule_same_hemisphere(i1, i2);
-    //             }
-    //             if tmp {
-    //                 return true;
-    //             }
-    //         }
-    //     }
-    //     tmp
-    // }
-
-    // /// 有符号小于等于
-    // pub fn comparison_sle(&self, other: &Self) -> bool {
-    //     self.comparison_signed_less_than(self, other, false)
-    // }
-
-    // /// 有符号小于
-    // pub fn comparison_slt(&self, other: &Self) -> bool {
-    //     self.comparison_signed_less_than(self, other, true)
-    // }
-
-    // /// 无符号小于等于
-    // pub fn comparison_ule(&self, other: &Self) -> bool {
-    //     self.comparison_unsigned_less_than(self, other, false)
-    // }
-
-    // /// 无符号小于
-    // pub fn comparison_ult(&self, other: &Self) -> bool {
-    //     self.comparison_unsigned_less_than(self, other, true)
     // }
 
     // /// 规范化区间

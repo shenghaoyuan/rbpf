@@ -142,6 +142,17 @@ fn run_rust_comparison_test(
     }
 }
 
+fn random_wrapped_interval_no_zero() -> WrappedRange {
+    let mut rng = thread_rng();
+    let bitwidth = 64u32;
+    let max_val = 1024;
+    // Generate a start value greater than 0
+    let start = rng.gen_range(1..max_val);
+    // Generate an end value greater than start, ensuring no wrap-around that includes 0
+    let end = rng.gen_range(start..max_val);
+    WrappedRange::new_bounds(start, end, bitwidth)
+}
+
 fn random_wrapped_interval() -> WrappedRange {
     let mut rng = thread_rng();
     let bitwidth = 64u32;
@@ -150,20 +161,20 @@ fn random_wrapped_interval() -> WrappedRange {
 
     let start = rng.gen::<u64>() % max_val;
     let end = rng.gen::<u64>() % max_val;
-    
+
     WrappedRange::new_bounds(start, end, bitwidth)
 }
 
 fn main() {
     let n: usize = std::env::args()
         .nth(1)
-        .unwrap_or_else(|| "1".to_string())  // 改成1进行调试
+        .unwrap_or_else(|| "1".to_string()) // 改成1进行调试
         .parse()
         .unwrap_or(1);
 
     let iterations: usize = std::env::args()
         .nth(2)
-        .unwrap_or_else(|| "1".to_string())  // 改成1进行调试
+        .unwrap_or_else(|| "1".to_string()) // 改成1进行调试
         .parse()
         .unwrap_or(1);
 
@@ -175,14 +186,19 @@ fn main() {
     let mut at_test_cases = Vec::new();
     let mut comparison_test_cases = Vec::new();
 
-    let operations: Vec<(&str, Box<dyn Fn(&WrappedRange, &WrappedRange) -> WrappedRange>)> = vec![
+    let operations: Vec<(
+        &str,
+        Box<dyn Fn(&WrappedRange, &WrappedRange) -> WrappedRange>,
+    )> = vec![
         ("add", Box::new(|a, b| a.add(b))),
         ("sub", Box::new(|a, b| a.sub(b))),
         ("unsigned_mul", Box::new(|a, b| a.unsigned_mul(b))),
         ("signed_mul", Box::new(|a, b| a.signed_mul(b))),
         ("mul", Box::new(|a, b| a.mul(b))),
-        // ("udiv", Box::new(|a, b| a.udiv(b))),
-        // ("sdiv", Box::new(|a, b| a.sdiv(b))),
+        ("signed_div", Box::new(|a, b| a.signed_div(b))),
+        ("unsigned_div", Box::new(|a, b| a.unsigned_div(b))),
+        ("udiv", Box::new(|a, b| a.udiv(b))),
+        ("sdiv", Box::new(|a, b| a.sdiv(b))),
         // ("urem", Box::new(|a, b| a.urem(b))),
         // ("srem", Box::new(|a, b| a.srem(b))),
         ("and", Box::new(|a, b| a.and(b))),
@@ -197,9 +213,8 @@ fn main() {
         // ("narrowing", Box::new(|a, b| a.narrowing(b))),
     ];
 
-    let comparison_operations: Vec<(&str, Box<dyn Fn(&WrappedRange, &WrappedRange) -> bool>)> = vec![
-        ("less_or_equal", Box::new(|a, b| a.less_or_equal(b))),
-    ];
+    let comparison_operations: Vec<(&str, Box<dyn Fn(&WrappedRange, &WrappedRange) -> bool>)> =
+        vec![("less_or_equal", Box::new(|a, b| a.less_or_equal(b)))];
 
     for _ in 0..n {
         let a = random_wrapped_interval();
@@ -207,11 +222,22 @@ fn main() {
 
         for (op_name, op_fn) in &operations {
             let mut results = Vec::new();
+
+            // Create a temporary variable `owned_divisor` for the special case.
+            // `divisor_ref` will then be a reference to either `b` or `owned_divisor`.
+            let owned_divisor;
+            let divisor_ref = if *op_name == "signed_div" || *op_name == "unsigned_div" {
+                owned_divisor = random_wrapped_interval_no_zero();
+                &owned_divisor
+            } else {
+                &b
+            };
+
             let rust_result = run_rust_test(
                 &format!("Rust_{}", op_name),
                 op_fn.as_ref(),
                 &a,
-                &b,
+                divisor_ref,
                 iterations,
             );
             results.push(rust_result);
@@ -225,10 +251,10 @@ fn main() {
                     is_bottom: a.is_bottom(),
                 },
                 input_b: TestWrappedInterval {
-                    start: b.lb(),
-                    end: b.ub(),
-                    bitwidth: b.width(),
-                    is_bottom: b.is_bottom(),
+                    start: divisor_ref.lb(),
+                    end: divisor_ref.ub(),
+                    bitwidth: divisor_ref.width(),
+                    is_bottom: divisor_ref.is_bottom(),
                 },
                 results,
             });
@@ -267,12 +293,7 @@ fn main() {
         // 添加 at 方法测试
         let test_value = b.lb(); // 使用 b 的下界作为测试值
         let mut at_results = Vec::new();
-        let rust_at_result = run_rust_at_test(
-            "Rust_at",
-            &a,
-            test_value,
-            iterations,
-        );
+        let rust_at_result = run_rust_at_test("Rust_at", &a, test_value, iterations);
         at_results.push(rust_at_result);
 
         at_test_cases.push(AtTestCase {
@@ -304,10 +325,10 @@ fn main() {
 
     let json = serde_json::to_string_pretty(&all_tests).unwrap();
     let output_file = "./tests/build/rust_wrapped_interval_cases.json";
-    
+
     // 确保输出目录存在
     std::fs::create_dir_all("./tests/build").unwrap();
-    
+
     let mut file = File::create(output_file).unwrap();
     file.write_all(json.as_bytes()).unwrap();
 

@@ -91,6 +91,20 @@ crab::domains::wrapped_interval<DummyNumber> run_cpp_operation(
     {
         return a * b;
     }
+    else if (strcmp(operation,"signed_div")==0)
+    {
+        return a.signed_div(b);
+    }else if (strcmp(operation, "sdiv") == 0)
+    {
+        return a.SDiv(b);
+    }else if (strcmp(operation, "unsigned_div") == 0)
+    {
+        return a.unsigned_div(b);
+    }else if (strcmp(operation, "udiv") == 0)
+    {
+        return a.UDiv(b);
+    }
+    
 
     // Default case: return bottom
     return crab::domains::wrapped_interval<DummyNumber>::bottom();

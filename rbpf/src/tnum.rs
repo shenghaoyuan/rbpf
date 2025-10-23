@@ -785,8 +785,8 @@ impl Tnum {
         {
             // 除数是 2 的幂，直接用位掩码计算余数
             let low_bits = other.value - 1; // 例如：8-1=7(0b111)，用于掩码
-            let res_value = low_bits & self.value;
-            let res_mask = low_bits & self.mask;
+            let res_value = low_bits & res.value;
+            let res_mask = low_bits & res.mask;
             return Self::new(res_value, res_mask);
         }
 
@@ -1025,43 +1025,44 @@ impl Tnum {
             let leadz = MaxRes.leading_zeros();
             Res.value.clear_high_bits(leadz);
             Res.mask.clear_high_bits(leadz);
-            // if (leadz == 64) {
-            //     return Res;
-            // }
-            // let result = self.div_compute_low_bit(Res, other);
+            if (leadz == 64) {
+                return Res;
+            }
+            let Res = Res.div_compute_low_bit(*self, other);
             return Res;
         }
     }
 
-    fn div_compute_low_bit(&self, mut result: Self, other: Self) -> Self {
+    fn div_compute_low_bit(&self, lhs: Self, rhs: Self) -> Self {
+        let mut known = self.clone();
         // 奇数 / 奇数 -> 奇数
-        if (self.value & 1) != 0 && (self.mask & 1) != 0 {
-            result.value |= 1; // 设置最低位为1
-            result.mask &= !1;
+        if (lhs.value & 1) != 0 && (lhs.mask & 1) != 0 {
+            known.value |= 1; // 设置最低位为1
+            known.mask &= !1;
         }
 
         let min_tz =
-            self.count_min_trailing_zeros() as i32 - other.count_max_trailing_zeros() as i32;
+            lhs.count_min_trailing_zeros() as i32 - rhs.count_max_trailing_zeros() as i32;
         let max_tz =
-            self.count_max_trailing_zeros() as i32 - other.count_min_trailing_zeros() as i32;
+            lhs.count_max_trailing_zeros() as i32 - rhs.count_min_trailing_zeros() as i32;
 
         if min_tz >= 0 {
-            result.value.clear_low_bits(min_tz as u32);
-            result.mask.clear_low_bits(min_tz as u32);
+            known.value.clear_low_bits(min_tz as u32);
+            known.mask.clear_low_bits(min_tz as u32);
 
             if min_tz == max_tz {
                 // 结果恰好有min_tz个尾随零
-                result.value |= 1u64 << min_tz; // 设置第min_tz位为1
-                result.mask &= !(1u64 << min_tz); // 清除第min_tz位的掩码
+                known.value |= 1u64 << min_tz; // 设置第min_tz位为1
+                known.mask &= !(1u64 << min_tz); // 清除第min_tz位的掩码
             }
         }
 
         // 检查结果是否为bottom
-        if result.is_bottom() {
+        if known.is_bottom() {
             return Self::top();
         }
 
-        result
+        known
     }
 
     /// 创建指定位宽的 bottom 元素
@@ -1226,8 +1227,9 @@ pub fn rem_get_low_bits(lhs: &Tnum, rhs: &Tnum) -> Tnum {
             return Tnum::top();
         }
 
-        /// mask源代码看起来有点问题？
-        let mut mask = if qzero > 1 { (1u64 << qzero) - 1 } else { 0u64 };
+
+        let mut mask = if qzero > 1 { 1u64 << (qzero-1)-1 } else { 0u64 };
+        ///此处clam中的实现有问题，应该注释掉
         // mask = 0xFFFFFFFFFFFFFFFF;
 
         let res_value = lhs.value & mask;

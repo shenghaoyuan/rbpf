@@ -86,16 +86,12 @@ impl MsbCheck for u64 {
 }
 
 fn get_signed_representation(value: u64, width: u32) -> i64 {
-    // 默认64位，简化计算
     let masked_value = value;
 
     if masked_value & (1u64 << 63) != 0 {
-        // 负数：执行符号扩展
-        // 直接使用二进制补码的符号扩展
         let sign_extended = masked_value | (!u64::MAX); // 将高位全部置1
         sign_extended as i64
     } else {
-        // 正数：直接转换
         masked_value as i64
     }
 }
@@ -286,22 +282,6 @@ impl WrappedRange {
         self.base.is_top = false;
     }
 
-    /// 字典序小于
-    // fn lex_less_than(&self, x: u64, y: u64) -> bool {
-    //     if self.is_msb_zero(x) && self.is_msb_one(y) {
-    //         false
-    //     } else if self.is_msb_one(x) && self.is_msb_zero(y) {
-    //         true
-    //     } else {
-    //         x < y
-    //     }
-    // }
-
-    // /// 字典序小于等于
-    // fn lex_less_or_equal(&self, x: u64, y: u64) -> bool {
-    //     self.lex_less_than(x, y) || x == y
-    // }
-
     /// 计算基数(区间大小)
     pub fn cardinality(&self) -> u64 {
         if self.is_bottom {
@@ -333,12 +313,6 @@ impl WrappedRange {
         }
     }
 
-    /// 检查是否为零区间
-    // pub fn is_zero_range(&self) -> bool {
-    //     !self.base.is_top && self.base.lb == 0 && self.base.ub == 0
-    // }
-
-    /// 检查给定值是否在区间内
     pub fn at(&self, value: u64) -> bool {
         if self.is_bottom() {
             return false;
@@ -347,33 +321,6 @@ impl WrappedRange {
         }
         (value.wrapping_sub(self.base.lb)) <= (self.base.ub.wrapping_sub(self.base.lb))
     }
-
-    /// 在北极点分割区间
-    // pub fn nsplit(x: u64, y: u64, width: u32) -> Vec<Self> {
-    //     // 创建北极点区间 [0111...1, 1000...0]
-    //     let np_lb = (1u64 << (width - 1)) - 1; // 0111...1
-    //     let np_ub = 1u64 << (width - 1); // 1000...0
-    //     let np = Self::new_bounds(np_lb, np_ub, width);
-
-    //     // 创建临时区间
-    //     let s = Self::new_bounds(x, y, width);
-
-    //     let mut res = Vec::new();
-
-    //     // 如果不需要分割
-    //     if !np.less_or_equal(&s) {
-    //         res.push(s);
-    //         return res;
-    //     }
-
-    //     // 分割成两个区间
-    //     // [x, 0111...1]
-    //     res.push(Self::new_bounds(x, np_lb, width));
-    //     // [1000...0, y]
-    //     res.push(Self::new_bounds(np_ub, y, width));
-
-    //     res
-    // }
 
     pub fn signed_split(&self, intervals: &mut Vec<WrappedRange>) {
         if self.is_bottom() {
@@ -499,80 +446,6 @@ impl WrappedRange {
         !self.is_bottom() && self.base.lb == 0 && self.base.ub == 0
     }
 
-    // // /// 在南北极点都分割区间
-    // // pub fn psplit(x: u64, y: u64, width: u32) -> Vec<Self> {
-    // //     let mut res = Vec::new();
-
-    // //     // 先在北极点分割
-    // //     let s1 = Self::nsplit(x, y, width);
-
-    // //     // 对每个分割结果再在南极点分割
-    // //     for r in s1.iter() {
-    // //         let s2 = Self::signed_split(r.base.lb, r.base.ub, width);
-    // //         // 将所有结果添加到结果集
-    // //         res.extend(s2);
-    // //     }
-
-    // //     res
-    // // }
-
-    // /// 移除包含零的区间
-    // pub fn purge_zero(r: &Self) -> Vec<Self> {
-    //     let mut purged = Vec::new();
-
-    //     assert!(!(r.base.lb == 0 && r.base.ub == 0), "区间不能为[0,0]");
-
-    //     let width = r.base.width;
-    //     let zero = Self::new_bounds(0, 0, width);
-
-    //     if zero.less_or_equal(r) {
-    //         if r.base.lb == 0 {
-    //             if r.base.ub != 0 {
-    //                 // 不跨越南极点的情况
-    //                 purged.push(Self::new_bounds(
-    //                     r.base.lb.wrapping_add(1),
-    //                     r.base.ub,
-    //                     width,
-    //                 ));
-    //             }
-    //         } else {
-    //             if r.base.ub == 0 {
-    //                 // 区间如 [1000,0000]
-    //                 let minus_one = if width >= 64 {
-    //                     u64::MAX
-    //                 } else {
-    //                     (1u64 << width) - 1
-    //                 };
-    //                 purged.push(Self::new_bounds(r.base.lb, minus_one, width));
-    //             } else {
-    //                 // 跨越南极点的情况，分成两个区间
-    //                 let minus_one = if width >= 64 {
-    //                     u64::MAX
-    //                 } else {
-    //                     (1u64 << width) - 1
-    //                 };
-    //                 purged.push(Self::new_bounds(r.base.lb, minus_one, width));
-    //                 purged.push(Self::new_bounds(1, r.base.ub, width));
-    //             }
-    //         }
-    //     } else {
-    //         // 不需要分割
-    //         purged.push(r.clone());
-    //     }
-
-    //     purged
-    // }
-
-    // /// 批量移除包含零的区间
-    // pub fn purge_zero_vec(vs: &[Self]) -> Vec<Self> {
-    //     let mut res = Vec::new();
-    //     for v in vs {
-    //         let purged = Self::purge_zero(v);
-    //         res.extend(purged);
-    //     }
-    //     res
-    // }
-
     /// 检查是否小于等于
     pub fn less_or_equal(&self, x: &Self) -> bool {
         if x.is_top() || self.is_bottom() {
@@ -652,215 +525,6 @@ impl WrappedRange {
             64,
         )
     }
-
-    // pub fn exact_meet(&self, x: &Self, out: &mut Vec<WrappedRange>){
-    //     if self.is_bottom()||x.is_bottom(){
-    //         return;
-    //     }
-    // }
-
-    // /// 环绕乘法运算
-    // pub fn mul(&mut self, x: &Self)-> Self {
-    //     if self.is_bottom()||x.is_bottom(){
-    //         return Self::bottom(64);
-    //     }
-    //     if self.is_top()||x.is_top(){
-    //         return Self::top(64);
-    //     }else{
-    //         let mut cuts = Vec::<WrappedRange>::new();
-    //         let mut x_cuts = Vec::<WrappedRange>::new();
-
-    //         self.signed_and_unsigned_split(&mut cuts);
-    //         x.signed_and_unsigned_split(&mut x_cuts);
-    //         let mut res = Self::bottom(64);
-
-    //         for cut in &cuts {
-    //             for x_cut in &x_cuts {
-    //                 let prod = cut.unsigned_mul(x_cut);
-    //                 res = res.join(&prod);
-    //             }
-    //         }
-
-    //         res
-    //     }
-    // }
-
-    // /// 无符号除法
-    // fn wrapped_unsigned_division(dividend: &Self, divisor: &Self) -> Self {
-    //     let mut res = dividend.clone();
-
-    //     let a = dividend.base.lb;
-    //     let b = dividend.base.ub;
-    //     let c = divisor.base.lb;
-    //     let d = divisor.base.ub;
-
-    //     res.base.lb = a.wrapping_div(d);
-    //     res.base.ub = b.wrapping_div(c);
-
-    //     res
-    // }
-
-    // /// 有符号除法
-    // fn wrapped_signed_division(dividend: &Self, divisor: &Self) -> Self {
-    //     let mut res = dividend.clone();
-
-    //     // 将无符号值转换为有符号值
-    //     let to_signed = |x: u64, width: u32| -> i64 {
-    //         if x & (1 << (width - 1)) != 0 {
-    //             -(((!x + 1) & ((1 << width) - 1)) as i64)
-    //         } else {
-    //             x as i64
-    //         }
-    //     };
-
-    //     let from_signed = |x: i64, width: u32| -> u64 {
-    //         if x < 0 {
-    //             (!(-x as u64) + 1) & ((1 << width) - 1)
-    //         } else {
-    //             x as u64
-    //         }
-    //     };
-
-    //     let width = dividend.base.width;
-    //     let a = to_signed(dividend.base.lb, width);
-    //     let b = to_signed(dividend.base.ub, width);
-    //     let c = to_signed(divisor.base.lb, width);
-    //     let d = to_signed(divisor.base.ub, width);
-
-    //     let div1 = a.checked_div(d).map(|x| from_signed(x, width)).unwrap_or(0);
-    //     let div2 = a.checked_div(c).map(|x| from_signed(x, width)).unwrap_or(0);
-    //     let div3 = b.checked_div(d).map(|x| from_signed(x, width)).unwrap_or(0);
-    //     let div4 = b.checked_div(c).map(|x| from_signed(x, width)).unwrap_or(0);
-
-    //     res.base.lb = div1.min(div2).min(div3).min(div4);
-    //     res.base.ub = div1.max(div2).max(div3).max(div4);
-
-    //     res
-    // }
-
-    // /// 环绕除法运算
-    // pub fn wrapped_division(&mut self, dividend: &Self, divisor: &Self, is_signed: bool) {
-    //     // 处理特殊情况
-    //     if dividend.is_zero_range() {
-    //         self.base.lb = 0;
-    //         self.base.ub = 0;
-    //         return;
-    //     }
-
-    //     if divisor.is_zero_range() {
-    //         self.make_bottom();
-    //         return;
-    //     }
-
-    //     if is_signed {
-    //         // 有符号除法
-    //         let s1 = Self::psplit(dividend.base.lb, dividend.base.ub, dividend.base.width);
-    //         let s2 = Self::purge_zero_vec(&Self::psplit(
-    //             divisor.base.lb,
-    //             divisor.base.ub,
-    //             divisor.base.width,
-    //         ));
-
-    //         self.make_bottom();
-
-    //         for i1 in s1.iter() {
-    //             for i2 in s2.iter() {
-    //                 let tmp = Self::wrapped_signed_division(i1, i2);
-    //                 self.wrapped_join(&tmp);
-    //             }
-    //         }
-    //     } else {
-    //         // 无符号除法
-    //         let s1 = Self::signed_split(dividend.base.lb, dividend.base.ub, dividend.base.width);
-    //         let s2 = Self::purge_zero_vec(&Self::signed_split(
-    //             divisor.base.lb,
-    //             divisor.base.ub,
-    //             divisor.base.width,
-    //         ));
-
-    //         self.make_bottom();
-
-    //         for i1 in s1.iter() {
-    //             for i2 in s2.iter() {
-    //                 let tmp = Self::wrapped_unsigned_division(i1, i2);
-    //                 self.wrapped_join(&tmp);
-    //             }
-    //         }
-    //     }
-
-    //     self.normalize();
-    // }
-
-    // /// 二元 Join 操作
-    // pub fn wrapped_join(&mut self, other: &Self) {
-    //     // 处理 bottom 情况
-    //     if other.is_bottom {
-    //         return;
-    //     }
-    //     if self.is_bottom {
-    //         *self = other.clone();
-    //         return;
-    //     }
-
-    //     // 处理 top 情况
-    //     if other.is_top() || self.is_top() {
-    //         self.make_top();
-    //         return;
-    //     }
-
-    //     let a = self.base.lb;
-    //     let b = self.base.ub;
-    //     let c = other.base.lb;
-    //     let d = other.base.ub;
-
-    //     // 包含关系的情况
-    //     if other.less_or_equal(self) {
-    //         return;
-    //     }
-    //     if self.less_or_equal(other) {
-    //         *self = other.clone();
-    //         return;
-    //     }
-
-    //     // 一个覆盖另一个的情况
-    //     if other.at(a) && other.at(b) && self.at(c) && self.at(d) {
-    //         self.make_top();
-    //         return;
-    //     }
-
-    //     // 重叠的情况
-    //     if self.at(c) {
-    //         self.base.lb = a;
-    //         self.base.ub = d;
-    //     } else if other.at(a) {
-    //         self.base.lb = c;
-    //         self.base.ub = b;
-    //     }
-    //     // 左/右倾斜的情况：非确定性情况
-    //     // 这里使用字典序来解决平局
-    //     else if Self::w_card(b, c) == Self::w_card(d, a) {
-    //         if self.lex_less_than(a, c) {
-    //             // 避免跨越北极点
-    //             self.base.lb = a;
-    //             self.base.ub = d;
-    //         } else {
-    //             // 避免跨越北极点
-    //             self.base.lb = c;
-    //             self.base.ub = b;
-    //         }
-    //     } else if Self::w_card(b, c) <= Self::w_card(d, a) {
-    //         self.base.lb = a;
-    //         self.base.ub = d;
-    //     } else {
-    //         self.base.lb = c;
-    //         self.base.ub = b;
-    //     }
-
-    //     self.normalize_top();
-    //     if !self.is_bottom && !other.is_bottom {
-    //         self.reset_bottom_flag();
-    //     }
-    // }
 
     /// And 操作
     pub fn and(&self, x: &Self) -> Self {
@@ -1292,7 +956,7 @@ impl WrappedRange {
         self.default_implementation(x)
     }
 
-    /// 截断函数
+    /// 截断函数 - 与C++实现保持完全一致
     pub fn trunc(&self, bits_to_keep: u32) -> Self {
         if self.is_bottom() || self.is_top() {
             return self.clone();
@@ -1300,80 +964,198 @@ impl WrappedRange {
 
         let w = self.width();
 
-        // 检查高位部分是否相同
         let start_high = self.lb() >> bits_to_keep;
         let end_high = self.ub() >> bits_to_keep;
 
         if start_high == end_high {
-            // 高位相同，可以安全截断
-            let lower_start = self.keep_lower(bits_to_keep);
-            let lower_end = self.ub() & ((1u64 << bits_to_keep) - 1);
+            let mask = (1u64 << bits_to_keep) - 1; // 标准的低位mask
+            let lower_start = self.lb() & mask;
+            let lower_end = self.ub() & mask;
 
             if lower_start <= lower_end {
-                return Self::new_bounds(lower_start, lower_end, bits_to_keep);
+                return Self::new_bounds(lower_start, lower_end, w);
             }
         } else {
-            // 高位不同，需要检查环绕情况
-            let y = start_high + 1;
+            let y = start_high.wrapping_add(1);
             if y == end_high {
-                let lower_start = self.keep_lower(bits_to_keep);
-                let lower_end = self.ub() & ((1u64 << bits_to_keep) - 1);
+                let mask = (1u64 << bits_to_keep) - 1;
+                let lower_start = self.lb() & mask;
+                let lower_end = self.ub() & mask;
 
                 if !(lower_start <= lower_end) {
-                    return Self::new_bounds(lower_start, lower_end, bits_to_keep);
+                    return Self::new_bounds(lower_start, lower_end, w);
                 }
             }
         }
 
-        // 如果无法确定，返回top
-        Self::top(bits_to_keep)
+        // 其他情况返回top
+        Self::top(w)
     }
 
-    /// 保留低位bits_to_keep位的辅助函数
-    fn keep_lower(&self, bits_to_keep: u32) -> u64 {
-        if bits_to_keep >= self.width() {
-            return self.lb();
+    // 常量左移
+    pub fn shl_const(&self, k: u64) -> Self {
+        if self.is_bottom() {
+            return self.clone();
         }
 
-        let mask = (1u64 << bits_to_keep) - 1;
-        self.lb() & mask
+        if self.is_top() {
+            return self.clone();
+        }
+
+        let b = self.width();
+        let truncated = self.trunc(b - k as u32);
+
+        if !truncated.is_top() {
+            let start = self.lb() << k;
+            let end = self.ub() << k;
+            Self::new_bounds(start, end, b)
+        } else {
+            Self::top(b)
+        }
     }
 
-    // // 常量左移
-    // pub fn shl_const(&self, k: u64) -> Self {
-    //     if self.is_bottom() {
-    //         return self.clone();
-    //     }
+    // 区间左移
+    pub fn shl(&self, x: &Self) -> Self {
+        if self.is_bottom() {
+            return self.clone();
+        }
 
-    //     if self.is_top() {
-    //         return self.clone();
-    //     }
+        // 只有当位移量是单例时才执行
+        if x.is_singleton() {
+            self.shl_const(x.lb())
+        } else {
+            Self::top(self.width())
+        }
+    }
 
-    //     let b = self.width();
-    //     let truncated = self.trunc(b - k as u32);
+    
+    pub fn lshr_const(&self, k: u64) -> Self {
+        if self.is_bottom() {
+            return self.clone();
+        }
+        // 必须先判断 is_top，再调用 cross_unsigned_limit
+        if self.is_top() {
+            return self.clone();
+        }
+        if !self.cross_unsigned_limit() {
+            // b = 位宽
+            let b = self.width();
+            // 区间左右端点逻辑右移
+            let new_lb = self.lb() >> k;
+            let new_ub = self.ub() >> k;
+            Self::new_bounds(new_lb, new_ub, b)
+        } else {
+            // TODO: 理论上应返回 (0, 0..01..1 where #0's = k and #1's = b-k)
+            Self::top(self.width())
+        }
+    }
 
-    //     if !truncated.is_top() {
-    //         let start = self.lb() << k;
-    //         let end = self.ub() << k;
-    //         Self::new_bounds(start, end, b)
-    //     } else {
-    //         Self::top(b)
-    //     }
-    // }
+    // 算术右移
+    pub fn ashr_const(&self, k: u64) -> Self {
+        if self.is_bottom() {
+            return self.clone();
+        }
 
-    // // 区间左移
-    // pub fn shl(&self, x: &Self) -> Self {
-    //     if self.is_bottom() {
-    //         return self.clone();
-    //     }
+        if self.is_top() {
+            return self.clone();
+        }
 
-    //     // 只有当位移量是单例时才执行
-    //     if x.is_singleton() {
-    //         self.shl_const(x.lb())
-    //     } else {
-    //         Self::top(self.width())
-    //     }
-    // }
+        if !self.cross_signed_limit() {
+            let b = self.width();
+            let start_result = self.lb() >> k;
+            let end_result = self.ub() >> k;
+            Self::new_bounds(start_result, end_result, b)
+        } else {
+            // TODO: 返回 (1...10..0, 0..01..1)
+            //            #1's=k #0's=b-k   #0's=k #1's=b-k
+            Self::top(self.width())
+        }
+    }
+
+    // 算术右移
+    pub fn ashr(&self, x: &Self) -> Self {
+        if self.is_bottom() {
+            return self.clone();
+        }
+
+        // 只有当位移量是单例时才执行
+        if x.is_singleton() {
+            self.ashr_const(x.lb())
+        } else {
+            Self::top(self.width())
+        }
+    }
+
+    // 检查是否跨越有符号限制
+    pub fn cross_signed_limit(&self) -> bool {
+        if self.is_bottom() || self.is_top() {
+            return false;
+        }
+
+        let signed_limit = self.signed_limit(self.width());
+        self.contains_interval(&signed_limit)
+    }
+
+    // 检查是否跨越无符号限制
+    fn cross_unsigned_limit(&self) -> bool {
+        if self.is_bottom() || self.is_top() {
+            return false;
+        }
+
+        let unsigned_limit = self.unsigned_limit(self.width());
+        self.contains_interval(&unsigned_limit)
+    }
+
+    // 检查当前区间是否包含另一个区间
+    fn contains_interval(&self, other: &Self) -> bool {
+        if self.is_bottom() {
+            return false;
+        }
+        if other.is_bottom() {
+            return true;
+        }
+        if self.is_top() {
+            return true;
+        }
+        if other.is_top() {
+            return false;
+        }
+
+        // 对于环绕区间，需要特殊处理
+        if self.base.lb <= self.base.ub {
+            // 当前区间不是环绕的
+            if other.base.lb <= other.base.ub {
+                // 另一个区间也不是环绕的
+                self.base.lb <= other.base.lb && other.base.ub <= self.base.ub
+            } else {
+                // 另一个区间是环绕的，当前区间不能包含它
+                false
+            }
+        } else {
+            // 当前区间是环绕的
+            if other.base.lb <= other.base.ub {
+                // 另一个区间不是环绕的
+                other.base.lb >= self.base.lb || other.base.ub <= self.base.ub
+            } else {
+                // 两个区间都是环绕的
+                self.base.lb <= other.base.lb && other.base.ub <= self.base.ub
+            }
+        }
+    }
+
+    // 返回有符号限制区间 [signed_max, signed_min]
+    pub fn signed_limit(&self, width: u32) -> Self {
+        let signed_max = Self::get_signed_max(width);
+        let signed_min = Self::get_signed_min(width);
+        Self::new_bounds(signed_max, signed_min, width)
+    }
+
+    // 返回无符号限制区间 [unsigned_max, unsigned_min]
+    fn unsigned_limit(&self, width: u32) -> Self {
+        let unsigned_max = Self::get_unsigned_max(width);
+        let unsigned_min = Self::get_unsigned_min(width);
+        Self::new_bounds(unsigned_max, unsigned_min, width)
+    }
 
     // Widening 操作
     // pub fn widening(&mut self, previous_v: &Self, jump_set: &[i64]) {

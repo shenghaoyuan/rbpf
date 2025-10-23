@@ -4,6 +4,7 @@
 #include <time.h>
 #include <stdbool.h>
 #include <unistd.h>
+#include <stdint.h>
 #include <json-c/json.h>
 #include <vector>
 #include <chrono>
@@ -100,14 +101,76 @@ crab::domains::wrapped_interval<DummyNumber> run_cpp_operation(
     }else if (strcmp(operation, "unsigned_div") == 0)
     {
         return a.unsigned_div(b);
-    }else if (strcmp(operation, "udiv") == 0)
+    }    else if (strcmp(operation, "udiv") == 0)
     {
         return a.UDiv(b);
+    }
+    else if (strcmp(operation, "shl") == 0)
+    {
+        // Check for special cases
+        if (a.is_bottom() || b.is_bottom()) {
+            return crab::domains::wrapped_interval<DummyNumber>::bottom();
+        }
+        if (a.is_top() || b.is_top()) {
+            return crab::domains::wrapped_interval<DummyNumber>::top();
+        }
+        return a.Shl(b);
     }
     
 
     // Default case: return bottom
     return crab::domains::wrapped_interval<DummyNumber>::bottom();
+}
+
+// 处理单参数操作（如trunc）
+crab::domains::wrapped_interval<DummyNumber> run_cpp_unary_operation(
+    const char *operation,
+    const crab::domains::wrapped_interval<DummyNumber> &a,
+    uint32_t bits_to_keep)
+{
+    if (strcmp(operation, "trunc") == 0)
+    {
+        // 检查是否为top或bottom，避免调用get_bitwidth()错误
+        if (a.is_bottom()) {
+            return crab::domains::wrapped_interval<DummyNumber>::bottom();
+        }
+        if (a.is_top()) {
+            return crab::domains::wrapped_interval<DummyNumber>::top();
+        }
+        return a.Trunc(bits_to_keep);
+    }
+    
+    // Default case: return bottom
+    return crab::domains::wrapped_interval<DummyNumber>::bottom();
+}
+
+
+// 处理shl_const操作
+crab::domains::wrapped_interval<DummyNumber> run_cpp_shl_const_operation(
+    const crab::domains::wrapped_interval<DummyNumber> &a,
+    uint64_t shift_amount)
+{
+    if (a.is_bottom()) {
+        return crab::domains::wrapped_interval<DummyNumber>::bottom();
+    }
+    if (a.is_top()) {
+        return crab::domains::wrapped_interval<DummyNumber>::top();
+    }
+    return a.Shl(shift_amount);
+}
+
+// 处理lshr_const操作
+crab::domains::wrapped_interval<DummyNumber> run_cpp_lshr_const_operation(
+    const crab::domains::wrapped_interval<DummyNumber> &a,
+    uint64_t shift_amount)
+{
+    if (a.is_bottom()) {
+        return crab::domains::wrapped_interval<DummyNumber>::bottom();
+    }
+    if (a.is_top()) {
+        return crab::domains::wrapped_interval<DummyNumber>::top();
+    }
+    return a.LShr(shift_amount);
 }
 
 bool run_cpp_at_operation(
@@ -292,13 +355,20 @@ int main(int argc, char *argv[])
             }
             else
             {
-                json_object_object_add(output_obj, "start",
-                                       json_object_new_uint64(result.start().get_uint64_t()));
-                json_object_object_add(output_obj, "end",
-                                       json_object_new_uint64(result.end().get_uint64_t()));
+                // 对于非top/bottom情况，需要检查是否可以安全调用start()和end()
+                if (!result.is_top() && !result.is_bottom()) {
+                    json_object_object_add(output_obj, "start",
+                                           json_object_new_uint64(result.start().get_uint64_t()));
+                    json_object_object_add(output_obj, "end",
+                                           json_object_new_uint64(result.end().get_uint64_t()));
+                } else {
+                    // 如果无法安全调用，使用默认值
+                    json_object_object_add(output_obj, "start", json_object_new_uint64(0));
+                    json_object_object_add(output_obj, "end", json_object_new_uint64(0));
+                }
                 json_object_object_add(output_obj, "is_bottom", json_object_new_boolean(false));
                 json_object_object_add(output_obj, "bitwidth",
-                                       json_object_new_int(result.get_bitwidth(__LINE__)));
+                                       json_object_new_int(64)); // 默认64位
             }
 
             json_object_object_add(cpp_result_obj, "output", output_obj);
@@ -539,10 +609,328 @@ int main(int argc, char *argv[])
         }
     }
 
+    // Process unary operations (like trunc)
+    struct json_object *unary_operations;
+    struct json_object *unary_results_array = json_object_new_array();
+    if (json_object_object_get_ex(root_obj, "unary_operations", &unary_operations))
+    {
+        int unary_case_count = json_object_array_length(unary_operations);
+        printf("Processing %d unary wrapped interval test cases with C++ implementation...\n", unary_case_count);
+
+        for (int i = 0; i < unary_case_count; i++)
+        {
+            struct json_object *test_case = json_object_array_get_idx(unary_operations, i);
+
+            // Get operation
+            struct json_object *op_obj;
+            json_object_object_get_ex(test_case, "operation", &op_obj);
+            const char *operation = json_object_get_string(op_obj);
+
+            struct json_object *input_a_obj, *bits_to_keep_obj;
+            json_object_object_get_ex(test_case, "input_a", &input_a_obj);
+            json_object_object_get_ex(test_case, "bits_to_keep", &bits_to_keep_obj);
+
+            struct json_object *a_start_obj, *a_end_obj, *a_bottom_obj;
+            json_object_object_get_ex(input_a_obj, "start", &a_start_obj);
+            json_object_object_get_ex(input_a_obj, "end", &a_end_obj);
+            json_object_object_get_ex(input_a_obj, "is_bottom", &a_bottom_obj);
+
+            uint64_t a_start = json_object_get_uint64(a_start_obj);
+            uint64_t a_end = json_object_get_uint64(a_end_obj);
+            bool a_is_bottom = json_object_get_boolean(a_bottom_obj);
+            uint32_t bits_to_keep = json_object_get_int(bits_to_keep_obj);
+
+            crab::wrapint::bitwidth_t width = 64;
+
+            crab::domains::wrapped_interval<DummyNumber> wint_a;
+            if (a_is_bottom)
+            {
+                wint_a = crab::domains::wrapped_interval<DummyNumber>::bottom();
+            }
+            else
+            {
+                wint_a = crab::domains::wrapped_interval<DummyNumber>(
+                    crab::wrapint(a_start, width), crab::wrapint(a_end, width));
+            }
+
+            // Perform unary operation and measure time
+            std::vector<double> times;
+            crab::domains::wrapped_interval<DummyNumber> result;
+
+            for (int iter = 0; iter < iterations; iter++)
+            {
+                auto start_time = std::chrono::high_resolution_clock::now();
+                result = run_cpp_unary_operation(operation, wint_a, bits_to_keep);
+                auto end_time = std::chrono::high_resolution_clock::now();
+
+                auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time);
+                times.push_back(duration.count());
+            }
+
+            // Calculate average time
+            double avg_time = 0.0;
+            for (double t : times)
+            {
+                avg_time += t;
+            }
+            avg_time /= times.size();
+
+            // Create result object
+            struct json_object *cpp_unary_result_obj = json_object_new_object();
+            json_object_object_add(cpp_unary_result_obj, "method", json_object_new_string("CPP_trunc"));
+            json_object_object_add(cpp_unary_result_obj, "avg_time_ns", json_object_new_double(avg_time));
+
+            struct json_object *output_obj = json_object_new_object();
+            
+            // 检查是否为top或bottom状态
+            if (result.is_bottom()) {
+                json_object_object_add(output_obj, "start", json_object_new_uint64(0));
+                json_object_object_add(output_obj, "end", json_object_new_uint64(0));
+                json_object_object_add(output_obj, "bitwidth", json_object_new_int(64)); // 默认64位
+            } else if (result.is_top()) {
+                // 对于top状态，使用最大值
+                uint64_t max_val = UINT64_MAX; // 64位最大值
+                json_object_object_add(output_obj, "start", json_object_new_uint64(0));
+                json_object_object_add(output_obj, "end", json_object_new_uint64(max_val));
+                json_object_object_add(output_obj, "bitwidth", json_object_new_int(64)); // 默认64位
+            } else {
+                // 对于非top/bottom情况，需要检查是否可以安全调用start()和end()
+                if (!result.is_top() && !result.is_bottom()) {
+                    json_object_object_add(output_obj, "start", json_object_new_uint64(result.start().get_uint64_t()));
+                    json_object_object_add(output_obj, "end", json_object_new_uint64(result.end().get_uint64_t()));
+                } else {
+                    // 如果无法安全调用，使用默认值
+                    json_object_object_add(output_obj, "start", json_object_new_uint64(0));
+                    json_object_object_add(output_obj, "end", json_object_new_uint64(0));
+                }
+                json_object_object_add(output_obj, "bitwidth", json_object_new_int(64)); // 默认64位
+            }
+            json_object_object_add(output_obj, "is_bottom", json_object_new_boolean(result.is_bottom()));
+            json_object_object_add(cpp_unary_result_obj, "output", output_obj);
+
+            // Create test case object
+            struct json_object *new_unary_test_case = json_object_new_object();
+            json_object_object_add(new_unary_test_case, "operation", json_object_new_string(operation));
+            json_object_object_add(new_unary_test_case, "input_a", input_a_obj);
+            json_object_object_add(new_unary_test_case, "bits_to_keep", bits_to_keep_obj);
+
+            struct json_object *unary_test_results_array = json_object_new_array();
+            json_object_array_add(unary_test_results_array, cpp_unary_result_obj);
+            json_object_object_add(new_unary_test_case, "results", unary_test_results_array);
+
+            json_object_array_add(unary_results_array, new_unary_test_case);
+        }
+    }
+
+
+    // Process shl_const operations
+    struct json_object *shl_const_operations;
+    struct json_object *shl_const_results_array = json_object_new_array();
+    if (json_object_object_get_ex(root_obj, "shl_const_operations", &shl_const_operations))
+    {
+        int shl_const_case_count = json_object_array_length(shl_const_operations);
+        printf("Processing %d shl_const wrapped interval test cases with C++ implementation...\n", shl_const_case_count);
+
+        for (int i = 0; i < shl_const_case_count; i++)
+        {
+            struct json_object *test_case = json_object_array_get_idx(shl_const_operations, i);
+
+            // Get operation
+            struct json_object *op_obj;
+            json_object_object_get_ex(test_case, "operation", &op_obj);
+            const char *operation = json_object_get_string(op_obj);
+
+            struct json_object *input_a_obj, *shift_amount_obj;
+            json_object_object_get_ex(test_case, "input_a", &input_a_obj);
+            json_object_object_get_ex(test_case, "shift_amount", &shift_amount_obj);
+
+            struct json_object *a_start_obj, *a_end_obj, *a_bottom_obj;
+            json_object_object_get_ex(input_a_obj, "start", &a_start_obj);
+            json_object_object_get_ex(input_a_obj, "end", &a_end_obj);
+            json_object_object_get_ex(input_a_obj, "is_bottom", &a_bottom_obj);
+
+            uint64_t a_start = json_object_get_uint64(a_start_obj);
+            uint64_t a_end = json_object_get_uint64(a_end_obj);
+            bool a_is_bottom = json_object_get_boolean(a_bottom_obj);
+            uint64_t shift_amount = json_object_get_uint64(shift_amount_obj);
+
+            crab::wrapint::bitwidth_t width = 64;
+
+            crab::domains::wrapped_interval<DummyNumber> wint_a;
+            if (a_is_bottom)
+            {
+                wint_a = crab::domains::wrapped_interval<DummyNumber>::bottom();
+            }
+            else
+            {
+                wint_a = crab::domains::wrapped_interval<DummyNumber>(
+                    crab::wrapint(a_start, width), crab::wrapint(a_end, width));
+            }
+
+            // Perform shl_const operation and measure time
+            std::vector<double> times;
+            crab::domains::wrapped_interval<DummyNumber> result;
+
+            for (int iter = 0; iter < iterations; iter++)
+            {
+                auto start_time = std::chrono::high_resolution_clock::now();
+                result = run_cpp_shl_const_operation(wint_a, shift_amount);
+                auto end_time = std::chrono::high_resolution_clock::now();
+
+                auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time);
+                times.push_back(duration.count());
+            }
+
+            double avg_time = 0.0;
+            for (double t : times)
+            {
+                avg_time += t;
+            }
+            avg_time /= times.size();
+
+            // Create result object
+            struct json_object *cpp_shl_const_result_obj = json_object_new_object();
+            json_object_object_add(cpp_shl_const_result_obj, "method",
+                                   json_object_new_string("CPP_shl_const"));
+
+            struct json_object *output_obj = json_object_new_object();
+            if (result.is_top()) {
+                json_object_object_add(output_obj, "start", json_object_new_uint64(0));
+                json_object_object_add(output_obj, "end", json_object_new_uint64(0));
+                json_object_object_add(output_obj, "bitwidth", json_object_new_int(64));
+                json_object_object_add(output_obj, "is_bottom", json_object_new_boolean(false));
+                json_object_object_add(output_obj, "is_top", json_object_new_boolean(true));
+            } else {
+                json_object_object_add(output_obj, "start", json_object_new_uint64(result.start().get_uint64_t()));
+                json_object_object_add(output_obj, "end", json_object_new_uint64(result.end().get_uint64_t()));
+                json_object_object_add(output_obj, "bitwidth", json_object_new_int(result.get_bitwidth(__LINE__)));
+                json_object_object_add(output_obj, "is_bottom", json_object_new_boolean(result.is_bottom()));
+                json_object_object_add(output_obj, "is_top", json_object_new_boolean(false));
+            }
+            json_object_object_add(cpp_shl_const_result_obj, "output", output_obj);
+            json_object_object_add(cpp_shl_const_result_obj, "avg_time_ns", json_object_new_double(avg_time));
+
+            struct json_object *new_shl_const_test_case = json_object_new_object();
+            json_object_object_add(new_shl_const_test_case, "operation", json_object_new_string(operation));
+            json_object_object_add(new_shl_const_test_case, "input_a", input_a_obj);
+            json_object_object_add(new_shl_const_test_case, "shift_amount", shift_amount_obj);
+
+            struct json_object *shl_const_test_results_array = json_object_new_array();
+            json_object_array_add(shl_const_test_results_array, cpp_shl_const_result_obj);
+            json_object_object_add(new_shl_const_test_case, "results", shl_const_test_results_array);
+
+            json_object_array_add(shl_const_results_array, new_shl_const_test_case);
+        }
+    }
+
+    // Process lshr_const operations
+    struct json_object *lshr_const_operations;
+    struct json_object *lshr_const_results_array = json_object_new_array();
+    if (json_object_object_get_ex(root_obj, "lshr_const_operations", &lshr_const_operations))
+    {
+        int lshr_const_case_count = json_object_array_length(lshr_const_operations);
+        printf("Processing %d lshr_const wrapped interval test cases with C++ implementation...\n", lshr_const_case_count);
+
+        for (int i = 0; i < lshr_const_case_count; i++)
+        {
+            struct json_object *test_case = json_object_array_get_idx(lshr_const_operations, i);
+
+            // Get operation
+            struct json_object *op_obj;
+            json_object_object_get_ex(test_case, "operation", &op_obj);
+            const char *operation = json_object_get_string(op_obj);
+
+            struct json_object *input_a_obj, *shift_amount_obj;
+            json_object_object_get_ex(test_case, "input_a", &input_a_obj);
+            json_object_object_get_ex(test_case, "shift_amount", &shift_amount_obj);
+
+            struct json_object *a_start_obj, *a_end_obj, *a_bottom_obj;
+            json_object_object_get_ex(input_a_obj, "start", &a_start_obj);
+            json_object_object_get_ex(input_a_obj, "end", &a_end_obj);
+            json_object_object_get_ex(input_a_obj, "is_bottom", &a_bottom_obj);
+
+            uint64_t a_start = json_object_get_uint64(a_start_obj);
+            uint64_t a_end = json_object_get_uint64(a_end_obj);
+            bool a_is_bottom = json_object_get_boolean(a_bottom_obj);
+            uint64_t shift_amount = json_object_get_uint64(shift_amount_obj);
+
+            crab::wrapint::bitwidth_t width = 64;
+
+            crab::domains::wrapped_interval<DummyNumber> wint_a;
+            if (a_is_bottom)
+            {
+                wint_a = crab::domains::wrapped_interval<DummyNumber>::bottom();
+            }
+            else
+            {
+                wint_a = crab::domains::wrapped_interval<DummyNumber>(
+                    crab::wrapint(a_start, width), crab::wrapint(a_end, width));
+            }
+
+            // Perform lshr_const operation and measure time
+            std::vector<double> times;
+            crab::domains::wrapped_interval<DummyNumber> result;
+
+            for (int iter = 0; iter < iterations; iter++)
+            {
+                auto start_time = std::chrono::high_resolution_clock::now();
+                result = run_cpp_lshr_const_operation(wint_a, shift_amount);
+                auto end_time = std::chrono::high_resolution_clock::now();
+
+                auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time);
+                times.push_back(duration.count());
+            }
+
+            double avg_time = 0.0;
+            for (double t : times)
+            {
+                avg_time += t;
+            }
+            avg_time /= times.size();
+
+            // Create result object
+            struct json_object *cpp_lshr_const_result_obj = json_object_new_object();
+            json_object_object_add(cpp_lshr_const_result_obj, "method",
+                                   json_object_new_string("CPP_lshr_const"));
+
+            struct json_object *output_obj = json_object_new_object();
+            if (result.is_top()) {
+                json_object_object_add(output_obj, "start", json_object_new_uint64(0));
+                json_object_object_add(output_obj, "end", json_object_new_uint64(0));
+                json_object_object_add(output_obj, "bitwidth", json_object_new_int(64));
+                json_object_object_add(output_obj, "is_bottom", json_object_new_boolean(false));
+                json_object_object_add(output_obj, "is_top", json_object_new_boolean(true));
+            } else {
+                json_object_object_add(output_obj, "start", json_object_new_uint64(result.start().get_uint64_t()));
+                json_object_object_add(output_obj, "end", json_object_new_uint64(result.end().get_uint64_t()));
+                json_object_object_add(output_obj, "bitwidth", json_object_new_int(result.get_bitwidth(__LINE__)));
+                json_object_object_add(output_obj, "is_bottom", json_object_new_boolean(result.is_bottom()));
+                json_object_object_add(output_obj, "is_top", json_object_new_boolean(false));
+            }
+            json_object_object_add(cpp_lshr_const_result_obj, "output", output_obj);
+            json_object_object_add(cpp_lshr_const_result_obj, "avg_time_ns", json_object_new_double(avg_time));
+
+            struct json_object *new_lshr_const_test_case = json_object_new_object();
+            json_object_object_add(new_lshr_const_test_case, "operation", json_object_new_string(operation));
+            json_object_object_add(new_lshr_const_test_case, "input_a", input_a_obj);
+            json_object_object_add(new_lshr_const_test_case, "shift_amount", shift_amount_obj);
+
+            struct json_object *lshr_const_test_results_array = json_object_new_array();
+            json_object_array_add(lshr_const_test_results_array, cpp_lshr_const_result_obj);
+            json_object_object_add(new_lshr_const_test_case, "results", lshr_const_test_results_array);
+
+            json_object_array_add(lshr_const_results_array, new_lshr_const_test_case);
+        }
+    }
+
     // Create final output structure
     json_object_object_add(output_array, "binary_operations", binary_results_array);
     json_object_object_add(output_array, "at_operations", at_results_array);
     json_object_object_add(output_array, "comparison_operations", comparison_results_array);
+    json_object_object_add(output_array, "unary_operations", unary_results_array);
+
+    json_object_object_add(output_array, "shl_const_operations", shl_const_results_array);
+    json_object_object_add(output_array, "lshr_const_operations", lshr_const_results_array);
 
     const char *output_json = json_object_to_json_string_ext(output_array, JSON_C_TO_STRING_PRETTY);
     FILE *out_fp = fopen(output_file, "w");

@@ -43,6 +43,24 @@ struct ComparisonTestCase {
     results: Vec<ComparisonMethodResult>,
 }
 
+/// 单参数操作测试用例（如trunc）
+#[derive(Debug, Serialize, Deserialize)]
+struct UnaryTestCase {
+    operation: String,
+    input_a: TestWrappedInterval,
+    bits_to_keep: u32,
+    results: Vec<MethodResult>,
+}
+
+/// shl_const操作测试用例
+#[derive(Debug, Serialize, Deserialize)]
+struct ShlConstTestCase {
+    operation: String,
+    input_a: TestWrappedInterval,
+    shift_amount: u64,
+    results: Vec<MethodResult>,
+}
+
 /// 测试方法结果结构
 #[derive(Debug, Serialize, Deserialize)]
 struct MethodResult {
@@ -142,6 +160,64 @@ fn run_rust_comparison_test(
     }
 }
 
+fn run_rust_shl_const_test(
+    method_name: &str,
+    a: &WrappedRange,
+    shift_amount: u64,
+    iterations: usize,
+) -> MethodResult {
+    let mut times = Vec::with_capacity(iterations);
+    let mut result = WrappedRange::bottom(64);
+
+    for _ in 0..iterations {
+        let start = Instant::now();
+        result = a.shl_const(shift_amount);
+        times.push(start.elapsed().as_nanos());
+    }
+
+    let output = TestWrappedInterval {
+        start: result.lb(),
+        end: result.ub(),
+        bitwidth: result.width(),
+        is_bottom: result.is_bottom(),
+    };
+
+    MethodResult {
+        method: method_name.to_string(),
+        output,
+        avg_time_ns: times.iter().sum::<u128>() as f64 / iterations as f64,
+    }
+}
+
+fn run_rust_lshr_const_test(
+    method_name: &str,
+    a: &WrappedRange,
+    shift_amount: u64,
+    iterations: usize,
+) -> MethodResult {
+    let mut times = Vec::with_capacity(iterations);
+    let mut result = WrappedRange::bottom(64);
+
+    for _ in 0..iterations {
+        let start = Instant::now();
+        result = a.lshr_const(shift_amount);
+        times.push(start.elapsed().as_nanos());
+    }
+
+    let output = TestWrappedInterval {
+        start: result.lb(),
+        end: result.ub(),
+        bitwidth: result.width(),
+        is_bottom: result.is_bottom(),
+    };
+
+    MethodResult {
+        method: method_name.to_string(),
+        output,
+        avg_time_ns: times.iter().sum::<u128>() as f64 / iterations as f64,
+    }
+}
+
 fn random_wrapped_interval_no_zero() -> WrappedRange {
     let mut rng = thread_rng();
     let bitwidth = 64u32;
@@ -185,6 +261,9 @@ fn main() {
     let mut test_cases = Vec::new();
     let mut at_test_cases = Vec::new();
     let mut comparison_test_cases = Vec::new();
+    let mut unary_test_cases = Vec::new();
+    let mut shl_const_test_cases = Vec::new();
+    let mut lshr_const_test_cases = Vec::new();
 
     let operations: Vec<(
         &str,
@@ -204,7 +283,7 @@ fn main() {
         ("and", Box::new(|a, b| a.and(b))),
         ("or", Box::new(|a, b| a.or(b))),
         // ("xor", Box::new(|a, b| a.xor(b))),
-        // ("shl", Box::new(|a, b| a.shl(b))),
+        ("shl", Box::new(|a, b| a.shl(b))),
         // ("lshr", Box::new(|a, b| a.lshr(b))),
         // ("ashr", Box::new(|a, b| a.ashr(b))),
         // ("meet", Box::new(|a, b| a.meet(b))),
@@ -309,18 +388,113 @@ fn main() {
         });
     }
 
-    // 创建包含三种测试类型的JSON输出
+    // 测试trunc操作
+    for _ in 0..n {
+        let a = random_wrapped_interval();
+        let bits_to_keep = thread_rng().gen_range(1..=a.width());
+        
+        let mut results = Vec::new();
+        
+        // 测试Rust实现
+        let rust_result = a.trunc(bits_to_keep);
+        results.push(MethodResult {
+            method: "rust".to_string(),
+            output: TestWrappedInterval {
+                start: rust_result.lb(),
+                end: rust_result.ub(),
+                bitwidth: rust_result.width(),
+                is_bottom: rust_result.is_bottom(),
+            },
+            avg_time_ns: 0.0, // trunc操作通常很快，设为0
+        });
+        
+        unary_test_cases.push(UnaryTestCase {
+            operation: "trunc".to_string(),
+            input_a: TestWrappedInterval {
+                start: a.lb(),
+                end: a.ub(),
+                bitwidth: a.width(),
+                is_bottom: a.is_bottom(),
+            },
+            bits_to_keep,
+            results,
+        });
+    }
+
+    // 测试shl_const操作
+    for _ in 0..n {
+        let a = random_wrapped_interval();
+        let shift_amount = thread_rng().gen_range(1..=a.width() as u64);
+
+        let mut results = Vec::new();
+        // 测试Rust实现
+        let rust_result = run_rust_shl_const_test(
+            "Rust_shl_const",
+            &a,
+            shift_amount,
+            iterations,
+        );
+        results.push(rust_result);
+
+        shl_const_test_cases.push(ShlConstTestCase {
+            operation: "shl_const".to_string(),
+            input_a: TestWrappedInterval {
+                start: a.lb(),
+                end: a.ub(),
+                bitwidth: a.width(),
+                is_bottom: a.is_bottom(),
+            },
+            shift_amount,
+            results,
+        });
+    }
+
+    // 测试lshr_const操作
+    for _ in 0..n {
+        let a = random_wrapped_interval();
+        let shift_amount = thread_rng().gen_range(1..=a.width() as u64);
+
+        let mut results = Vec::new();
+        // 测试Rust实现
+        let rust_result = run_rust_lshr_const_test(
+            "Rust_lshr_const",
+            &a,
+            shift_amount,
+            iterations,
+        );
+        results.push(rust_result);
+
+        lshr_const_test_cases.push(ShlConstTestCase {
+            operation: "lshr_const".to_string(),
+            input_a: TestWrappedInterval {
+                start: a.lb(),
+                end: a.ub(),
+                bitwidth: a.width(),
+                is_bottom: a.is_bottom(),
+            },
+            shift_amount,
+            results,
+        });
+    }
+
+    // 创建包含五种测试类型的JSON输出
     #[derive(Serialize)]
     struct AllTestCases {
         binary_operations: Vec<TestCase>,
         at_operations: Vec<AtTestCase>,
         comparison_operations: Vec<ComparisonTestCase>,
+        unary_operations: Vec<UnaryTestCase>,
+        shl_const_operations: Vec<ShlConstTestCase>,
+        lshr_const_operations: Vec<ShlConstTestCase>,
     }
 
     let all_tests = AllTestCases {
         binary_operations: test_cases,
         at_operations: at_test_cases,
         comparison_operations: comparison_test_cases,
+        unary_operations: unary_test_cases,
+        shl_const_operations: shl_const_test_cases,
+        lshr_const_operations: lshr_const_test_cases,
     };
 
     let json = serde_json::to_string_pretty(&all_tests).unwrap();

@@ -1,5 +1,5 @@
 //! This is a tnum implementation for Solana eBPF
-
+use fastdivide::DividerU64;
 use std::u64;
 
 fn testbit(val: u64, bit: u8) -> bool {
@@ -41,6 +41,66 @@ impl BitOps for u64 {
 pub struct Tnum {
     pub value: u64,
     pub mask: u64,
+}
+
+pub struct TnumU128 {
+    pub value: u128,
+    pub mask: u128,
+}
+
+impl TnumU128 {
+    /// 创建实例
+    pub fn new(value: u128, mask: u128) -> Self {
+        Self { value, mask }
+    }
+    /// tnum 的加法操作
+    pub fn add(&self, other: Self) -> Self {
+        // 计算掩码之和 - 表示两个不确定数的掩码组合
+        let sm = self.mask.wrapping_add(other.mask);
+
+        // 计算确定值之和
+        let sv = self.value.wrapping_add(other.value);
+
+        // sigma = (a.mask + b.mask) + (a.value + b.value)
+        // 用于检测进位传播情况
+        let sigma = sm.wrapping_add(sv);
+
+        // chi = 进位传播位图
+        // 通过异或操作找出哪些位发生了进位
+        let chi = sigma ^ sv;
+
+        // mu = 最终的不确定位掩码
+        // 包括:
+        // 1. 进位产生的不确定性 (chi)
+        // 2. 原始输入的不确定位 (a.mask | b.mask)
+        let mu = chi | self.mask | other.mask;
+
+        // 返回结果:
+        // value: 确定值之和，但排除所有不确定位 (~mu)
+        // mask: 所有不确定位的掩码
+        Self::new(sv & !mu, mu)
+    }
+
+    /// tnum 的乘法操作
+    pub fn mul(&self, other: Self) -> Self {
+        let mut a = Self::new(self.value, self.mask);
+        let mut b = Self::new(other.value, other.mask);
+        let acc_v = a.value.wrapping_mul(b.value);
+        let mut acc_m: Self = Self::new(0, 0);
+        while (a.value != 0) || (a.mask != 0) {
+            // println!("acc_m.mask:{:?}, acc_m.value:{:?}", acc_m.mask, acc_m.value);
+            if (a.value & 1) != 0 {
+                acc_m = acc_m.add(Self::new(0, b.mask));
+            } else if (a.mask & 1) != 0 {
+                acc_m = acc_m.add(Self::new(0, b.value | b.mask));
+            }
+            a.value = a.value.wrapping_shr(1);
+            a.mask = a.mask.wrapping_shr(1);
+            b.value = b.value.wrapping_shl(1);
+            b.mask = b.mask.wrapping_shl(1);
+        }
+        Self::new(acc_v, 0).add(acc_m)
+    }
 }
 
 impl Tnum {
@@ -161,6 +221,40 @@ impl Tnum {
         }
     }
 
+    /// tnum 的左移操作
+    pub fn tnum_lshift(self: Tnum, shift: u8) -> Tnum {
+        Tnum::new(
+            self.value.wrapping_shl(shift as u32),
+            self.mask.wrapping_shl(shift as u32),
+        )
+    }
+
+    /// tnum 的右移操作
+    pub fn tnum_rshift(self: Tnum, shift: u8) -> Tnum {
+        Tnum::new(
+            self.value.wrapping_shr(shift as u32),
+            self.mask.wrapping_shr(shift as u32),
+        )
+    }
+
+    /// tnum 算数右移的操作
+    pub fn tnum_arshift(self: Tnum, min_shift: u8, insn_bitness: u8) -> Tnum {
+        match insn_bitness {
+            32 => {
+                //32位模式
+                let value = ((self.value as i32) >> min_shift) as u32;
+                let mask = ((self.mask as i32) >> min_shift) as u32;
+                Tnum::new(value as u64, mask as u64)
+            }
+            _ => {
+                //64位模式
+                let value = ((self.value as i64) >> min_shift) as u64;
+                let mask = ((self.mask as i64) >> min_shift) as u64;
+                Tnum::new(value, mask)
+            }
+        }
+    }
+
     pub fn shl(&self, x: &Tnum) -> Tnum {
         if self.is_bottom() || x.is_bottom() {
             return Tnum::bottom();
@@ -258,11 +352,11 @@ impl Tnum {
                 value: u64::MAX,
                 mask: u64::MAX,
             };
-            let mut join_count = 0;
+            // let mut join_count = 0;
             for i in min_shift_amount..=max_shift_amount {
                 res = res.or(&self.lshr_const(i));
                 // join_count += 1;
-                if join_count > 6 || res.is_top() {
+                if res.is_top() {
                     return max_res;
                 }
             }
@@ -772,6 +866,59 @@ impl Tnum {
         result
     }
 
+    /// fast_divide
+    pub fn fast_divide(&self, other: Self) -> Self {
+        if other.mask == 0 && other.value == 0 {
+            return Tnum::top();
+        } else if other.mask == 0 && other.value == 1 {
+            return *self;
+        } else if other.mask == 0 {
+            let divider = DividerU64::divide_by(other.value);
+            match divider {
+                DividerU64::Fast { magic, shift } => {
+                    // 修正：使用32位magic number算法
+                    // 正确公式: ((dividend * magic) >> 32) >> shift
+                    let product = (self.value as u64).wrapping_mul(magic);
+                    let high_part = product >> 32;  // 取高32位
+                    let result_value = high_part >> shift;
+                    
+                    // 对于mask的处理（保守估计）
+                    let mask_product = (self.mask as u64).wrapping_mul(magic);
+                    let mask_high = mask_product >> 32;
+                    let result_mask = mask_high >> shift;
+                    
+                    return Self::new(result_value, result_mask);
+                    // println!("  - Strategy: Fast Path");
+                    // println!("  - Magic (M): 0x{:X} ({})", magic, magic);
+                    // println!("  - Shift (s): {}", shift);
+                    // println!("  - Formula: ((n * M) >> 32) >> s");
+                }
+                DividerU64::BitShift(shift) => {
+                    return self.tnum_rshift(shift as u8);
+                    // println!("  - Strategy: BitShift (Power of 2)");
+                    // println!("  - No Magic number (M) needed.");
+                    // println!("  - Shift (s): {}", shift);
+                    // println!("  - Formula: n >> s");
+                }
+                DividerU64::General { magic_low, shift } => {
+                    let self_u128 = TnumU128::new(self.value as u128,self.mask as u128);
+                    let other_u128 = TnumU128::new(magic_low as u128,0);
+                    let temp = self_u128.mul(other_u128);
+                    let q = Self::new((temp.value >> 64) as u64, (temp.mask >> 64) as u64);
+                    let mut res = self.sub(q).tnum_rshift(1).add(q);
+                    res = res.tnum_rshift(shift as u8);
+                    return res;
+                    // println!("  - Strategy: General Path");
+                    // println!("  - Magic_low: 0x{:X} ({})", magic_low, magic_low);
+                    // println!("  - The effective Magic number is (2^64 + Magic_low)");
+                    // println!("  - Shift (s): {}", shift);
+                    // println!("  - Formula: A more complex calculation (see source)");
+                }
+            }
+        }
+        self.sdiv(other)
+    }
+
     /// 有符号除法操作
     pub fn sdiv(&self, other: Self) -> Self {
         if self.is_bottom() || other.is_bottom() {
@@ -839,16 +986,16 @@ impl Tnum {
         let sign_max = i64::MAX;
         let sign_min = i64::MIN;
         let unsign_max = u64::MAX;
-        if value &(1i64 << 63) != 0 {
+        if value & (1i64 << 63) != 0 {
             return *self;
-        }else if mask &(1i64 << 63) != 0 {
+        } else if mask & (1i64 << 63) != 0 {
             let mut value = value;
-            value |= (1i64<<63);
+            value |= (1i64 << 63);
             let mut mask = mask;
-            mask &= !(1i64<<63);
-            return Tnum::new(value as u64,mask as u64);
-        }else {
-            return Tnum::new(unsign_max,unsign_max);
+            mask &= !(1i64 << 63);
+            return Tnum::new(value as u64, mask as u64);
+        } else {
+            return Tnum::new(unsign_max, unsign_max);
         }
     }
 
@@ -878,11 +1025,11 @@ impl Tnum {
             let leadz = MaxRes.leading_zeros();
             Res.value.clear_high_bits(leadz);
             Res.mask.clear_high_bits(leadz);
-            if (leadz == 64) {
-                return Res;
-            }
-            let result = self.div_compute_low_bit(Res, other);
-            return result;
+            // if (leadz == 64) {
+            //     return Res;
+            // }
+            // let result = self.div_compute_low_bit(Res, other);
+            return Res;
         }
     }
 
@@ -1080,12 +1227,8 @@ pub fn rem_get_low_bits(lhs: &Tnum, rhs: &Tnum) -> Tnum {
         }
 
         /// mask源代码看起来有点问题？
-        let mut mask = if qzero > 1 {
-            (1u64 << (qzero - 1)) - 1
-        } else {
-            0u64
-        };
-        mask = 0xFFFFFFFFFFFFFFFF;
+        let mut mask = if qzero > 1 { (1u64 << qzero) - 1 } else { 0u64 };
+        // mask = 0xFFFFFFFFFFFFFFFF;
 
         let res_value = lhs.value & mask;
         let res_mask = lhs.mask & mask;

@@ -111,6 +111,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "fastdivide"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9afc2bd4d5a73106dd53d10d73d3401c2f32730ba2c0b93ddb888a8983680471"
+
+[[package]]
 name = "funty"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -397,6 +403,7 @@ dependencies = [
  "byteorder 1.4.3",
  "combine",
  "elf",
+ "fastdivide",
  "gdbstub",
  "hash32",
  "json",

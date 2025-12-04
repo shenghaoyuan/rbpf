@@ -65,15 +65,7 @@ macro_rules! throw_error {
 
 macro_rules! check_pc {
     ($self:expr, $next_pc:ident, $target_pc:expr) => {
-        if ($target_pc as usize)
-            .checked_mul(ebpf::INSN_SIZE)
-            .and_then(|offset| {
-                $self
-                    .program
-                    .get(offset..offset.saturating_add(ebpf::INSN_SIZE))
-            })
-            .is_some()
-        {
+        if ebpf::is_pc_in_program($self.program, $target_pc as usize) {
             $next_pc = $target_pc;
         } else {
             throw_error!($self, EbpfError::CallOutsideTextSegment);
@@ -550,35 +542,39 @@ impl<'a, 'b, C: ContextObject> Interpreter<'a, 'b, C> {
                 check_pc!(self, next_pc, target_pc.wrapping_sub(self.program_vm_addr) / ebpf::INSN_SIZE as u64);
             },
 
-            // Do not delegate the check to the verifier, since self.registered functions can be
-            // changed after the program has been verified.
             ebpf::CALL_IMM => {
-                let key = self
-                    .executable
-                    .get_sbpf_version()
-                    .calculate_call_imm_target_pc(self.reg[11] as usize, insn.imm);
-                if self.executable.get_sbpf_version().static_syscalls() && insn.src == 1 {
-                    // make BPF to BPF call
-                    if !self.push_frame(config) {
-                        return false;
+                let mut resolved = false;
+                // External syscall
+                if !self.executable.get_sbpf_version().static_syscalls() || insn.src == 0 {
+                    if let Some((_, function)) = self.executable.get_loader().get_function_registry().lookup_by_key(insn.imm as u32) {
+                        self.reg[0] = match self.dispatch_syscall(function) {
+                            ProgramResult::Ok(value) => *value,
+                            ProgramResult::Err(_err) => return false,
+                        };
+                        resolved = true;
                     }
-                    check_pc!(self, next_pc, key as u64);
-                } else if let Some((_, function)) = self.executable.get_loader().get_function_registry().lookup_by_key(insn.imm as u32) {
-                    // SBPFv0 syscall
-                    self.reg[0] = match self.dispatch_syscall(function) {
-                        ProgramResult::Ok(value) => *value,
-                        ProgramResult::Err(_err) => return false,
-                    };
+                }
+                // Internal call
+                if self.executable.get_sbpf_version().static_syscalls() {
+                    let target_pc = (next_pc as i64).saturating_add(insn.imm);
+                    if ebpf::is_pc_in_program(self.program, target_pc as usize) && insn.src == 1 {
+                        if !self.push_frame(config) {
+                            return false;
+                        }
+                        next_pc = target_pc as u64;
+                        resolved = true;
+                    }
                 } else if let Some((_, target_pc)) =
                     self.executable
                     .get_function_registry()
-                    .lookup_by_key(key) {
-                    // make BPF to BPF call
+                    .lookup_by_key(insn.imm as u32) {
                     if !self.push_frame(config) {
                         return false;
                     }
                     check_pc!(self, next_pc, target_pc as u64);
-                } else {
+                    resolved = true;
+                }
+                if !resolved {
                     throw_error!(self, EbpfError::UnsupportedInstruction);
                 }
             }

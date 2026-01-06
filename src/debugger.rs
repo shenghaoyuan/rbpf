@@ -21,6 +21,7 @@ use gdbstub::target::ext::base::singlethread::{SingleThreadBase, SingleThreadRes
 use gdbstub::target::ext::lldb_register_info_override::{Callback, CallbackToken};
 use gdbstub::target::ext::section_offsets::Offsets;
 
+use crate::program::SBPFVersion;
 use crate::{
     ebpf,
     error::{EbpfError, ProgramResult},
@@ -145,6 +146,15 @@ impl<'a, 'b, C: ContextObject> Target for Interpreter<'a, 'b, C> {
         &mut self,
     ) -> Option<target::ext::lldb_register_info_override::LldbRegisterInfoOverrideOps<'_, Self>>
     {
+        Some(self)
+    }
+
+    #[inline(always)]
+    fn support_target_description_xml_override(
+        &mut self,
+    ) -> Option<
+        target::ext::target_description_xml_override::TargetDescriptionXmlOverrideOps<'_, Self>,
+    > {
         Some(self)
     }
 }
@@ -550,5 +560,96 @@ mod bpf_arch {
                 }
             }
         }
+    }
+}
+
+impl<'a, 'b, C: ContextObject>
+    target::ext::target_description_xml_override::TargetDescriptionXmlOverride
+    for Interpreter<'a, 'b, C>
+{
+    fn target_description_xml(
+        &self,
+        annex: &[u8],
+        offset: u64,
+        length: usize,
+        buf: &mut [u8],
+    ) -> TargetResult<usize, Self> {
+        let gdbstub_arch: GdbStubArch = self.executable.get_sbpf_version().into();
+        let feature_name = "org.gnu.gdb.sbpf.core";
+        let xml = match annex {
+            b"target.xml" => format!(
+                r#"<?xml version="1.0"?>
+<!DOCTYPE target SYSTEM "gdb-target.dtd">
+<target version="1.0">
+  <architecture>{gdbstub_arch}</architecture>
+
+  <feature name="{feature_name}">
+
+    <!-- General Purpose Registers R0–R9 -->
+    <reg name="r0" bitsize="64" regnum="0" dwarf_regnum="0" type="uint64" encoding="uint" format="hex"/>
+    <reg name="r1" bitsize="64" regnum="1" dwarf_regnum="1" type="uint64" encoding="uint" format="hex"/>
+    <reg name="r2" bitsize="64" regnum="2" dwarf_regnum="2" type="uint64" encoding="uint" format="hex"/>
+    <reg name="r3" bitsize="64" regnum="3" dwarf_regnum="3" type="uint64" encoding="uint" format="hex"/>
+    <reg name="r4" bitsize="64" regnum="4" dwarf_regnum="4" type="uint64" encoding="uint" format="hex"/>
+    <reg name="r5" bitsize="64" regnum="5" dwarf_regnum="5" type="uint64" encoding="uint" format="hex"/>
+    <reg name="r6" bitsize="64" regnum="6" dwarf_regnum="6" type="uint64" encoding="uint" format="hex"/>
+    <reg name="r7" bitsize="64" regnum="7" dwarf_regnum="7" type="uint64" encoding="uint" format="hex"/>
+    <reg name="r8" bitsize="64" regnum="8" dwarf_regnum="8" type="uint64" encoding="uint" format="hex"/>
+    <reg name="r9" bitsize="64" regnum="9" dwarf_regnum="9" type="uint64" encoding="uint" format="hex"/>
+
+    <!-- Frame Pointer R10 -->
+    <reg name="fp" bitsize="64" regnum="10" dwarf_regnum="10" type="data_ptr" encoding="uint" format="hex" generic="fp"/>
+
+    <!-- Program Counter R11 -->
+    <reg name="pc" bitsize="64" regnum="11" dwarf_regnum="11" type="code_ptr" encoding="uint" format="hex" generic="pc"/>
+
+    <!-- Instruction Counter R12 -->
+    <reg name="icount_remain" bitsize="64" regnum="12" type="uint64" encoding="uint" format="decimal"/>
+
+  </feature>
+</target>"#
+            ),
+            _ => return Err(TargetError::NonFatal),
+        };
+
+        // Copy the range of `data` (start at `offset` with a size of `length`) to `buf`.
+        let data = xml.trim().as_bytes();
+        let offset = offset as usize;
+        if offset > data.len() {
+            // If `offset` is greater than the length of the underlying data
+            // then return zero.
+            return Ok(0);
+        }
+
+        let start = offset;
+        let end = (offset + length).min(data.len());
+        let data = &data[start..end];
+        let len = buf.len().min(data.len());
+        buf[..len].copy_from_slice(&data[..len]);
+
+        // Return the size of data copied.
+        Ok(len)
+    }
+}
+
+struct GdbStubArch(SBPFVersion);
+
+impl From<SBPFVersion> for GdbStubArch {
+    fn from(sbpf_version: SBPFVersion) -> Self {
+        GdbStubArch(sbpf_version)
+    }
+}
+
+impl std::fmt::Display for GdbStubArch {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let gdbstub_arch = match self.0 {
+            SBPFVersion::V0 => "sbpf",
+            SBPFVersion::V1 => "sbpfv1",
+            SBPFVersion::V2 => "sbpfv2",
+            SBPFVersion::V3 => "sbpfv3",
+            SBPFVersion::V4 => "sbpfv4",
+            SBPFVersion::Reserved => "sbpfreserved",
+        };
+        write!(f, "{}", gdbstub_arch)
     }
 }

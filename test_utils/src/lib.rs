@@ -308,7 +308,7 @@ macro_rules! test_interpreter_and_jit {
                 vm.register_trace.clone(),
             )
         };
-        #[cfg(all(feature = "jit", not(target_os = "windows"), target_arch = "x86_64"))]
+        #[cfg(all(feature = "jit", not(target_os = "windows"), target_arch = "riscv64"))]
         {
             #[allow(unused_mut)]
             let compilation_result = $executable.jit_compile();

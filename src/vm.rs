@@ -376,7 +376,7 @@ impl<'a, C: ContextObject> EbpfVm<'a, C> {
             #[cfg(not(feature = "debugger"))]
             while interpreter.step() {}
         } else {
-            #[cfg(all(feature = "jit", not(target_os = "windows"), target_arch = "riscv64"))]
+            #[cfg(all(feature = "jit", not(target_os = "windows"), any(target_arch = "x86_64", target_arch = "riscv64")))]
             {
                 let compiled_program = match executable
                     .get_compiled_program()
@@ -387,7 +387,7 @@ impl<'a, C: ContextObject> EbpfVm<'a, C> {
                 };
                 compiled_program.invoke(config, self, self.registers);
             }
-            #[cfg(not(all(feature = "jit", not(target_os = "windows"), target_arch = "riscv64")))]
+            #[cfg(not(all(feature = "jit", not(target_os = "windows"), any(target_arch = "x86_64", target_arch = "riscv64"))))]
             {
                 return (0, ProgramResult::Err(EbpfError::JitNotCompiled));
             }

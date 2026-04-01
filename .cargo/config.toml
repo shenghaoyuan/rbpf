@@ -1,3 +1,4 @@
+#[cfg(target_arch = "riscv64")]
 [target.riscv64gc-unknown-linux-gnu]
 linker = "riscv64-linux-gnu-gcc"
 ar = "riscv64-linux-gnu-ar"

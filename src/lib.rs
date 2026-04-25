@@ -41,11 +41,11 @@ pub mod jit;
 mod memory_management;
 pub mod memory_region;
 pub mod program;
+#[cfg(all(feature = "jit", not(target_os = "windows"), target_arch = "riscv64"))]
+mod riscv;
 pub mod static_analysis;
 pub mod verifier;
 pub mod vm;
-#[cfg(all(feature = "jit", not(target_os = "windows"), target_arch = "riscv64"))]
-mod riscv;
 
 trait ErrCheckedArithmetic: Sized {
     fn err_checked_add(self, other: Self) -> Result<Self, ArithmeticOverflow>;

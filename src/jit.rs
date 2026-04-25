@@ -33,8 +33,8 @@ use crate::{
         allocate_pages, free_pages, get_system_page_size, protect_pages, round_to_page_size,
     },
     memory_region::{AccessType, MemoryMapping},
-    vm::{get_runtime_environment_key, Config, ContextObject, EbpfVm, RuntimeEnvironmentSlot},
     riscv::*,
+    vm::{get_runtime_environment_key, Config, ContextObject, EbpfVm, RuntimeEnvironmentSlot},
 };
 
 /// The maximum machine code length in bytes of a program with no guest instructions
@@ -54,6 +54,8 @@ pub struct JitProgram {
     pub pc_section: &'static mut [u32],
     /// The RISC-V machinecode
     pub text_section: &'static mut [u8],
+    /// Number of emitted host machine instructions
+    pub machine_instruction_count: usize,
 }
 
 impl JitProgram {
@@ -70,6 +72,7 @@ impl JitProgram {
                     raw.add(pc_loc_table_size),
                     over_allocated_code_size,
                 ),
+                machine_instruction_count: 0,
             })
         }
     }
@@ -133,25 +136,25 @@ impl JitProgram {
             }
             stmt_expr_attribute_asm!(
                 "addi sp, sp, -16",                // push s0 and s1
-                "sd s1, 8(sp)",                    
-                "sd s0, 0(sp)",                    
+                "sd s1, 8(sp)",
+                "sd s0, 0(sp)",
                 "sd sp, 0({host_stack_pointer})",  // host_stack_pointer needn't -8, because jarl don't push ra
-                
+
                 cfg(not(feature = "jit-enable-host-stack-frames")),
                 "xor s0, s0, s0",
 
-                "ld a0, 0(a7)",           
-                "ld a1, 8(a7)",           
-                "ld a2, 16(a7)",         
-                "ld a3, 24(a7)",         
-                "ld a4, 32(a7)",          
-                "ld a5, 40(a7)",          
-                "ld s1, 48(a7)",          
-                "ld s2, 56(a7)",          
-                "ld s3, 64(a7)",          
-                "ld s4, 72(a7)",          
-                "ld s5, 80(a7)",          
-                "ld a7, 88(a7)",          
+                "ld a0, 0(a7)",
+                "ld a1, 8(a7)",
+                "ld a2, 16(a7)",
+                "ld a3, 24(a7)",
+                "ld a4, 32(a7)",
+                "ld a5, 40(a7)",
+                "ld s1, 48(a7)",
+                "ld s2, 56(a7)",
+                "ld s3, 64(a7)",
+                "ld s4, 72(a7)",
+                "ld s5, 80(a7)",
+                "ld a7, 88(a7)",
                 // call the JITed code
                 "1: auipc t2, %pcrel_hi(2f)",
                 "addi t2, t2, %pcrel_lo(1b)",
@@ -162,7 +165,7 @@ impl JitProgram {
                 // pop s0 and s1
                 "ld s1, 8(sp)",
                 "ld s0, 0(sp)",
-                "addi sp, sp, 16",                 
+                "addi sp, sp, 16",
 
                 host_stack_pointer = in(reg) &mut vm.host_stack_pointer,
                 inlateout("s10") runtime_environment => _,
@@ -180,9 +183,14 @@ impl JitProgram {
         self.text_section.len()
     }
 
+    /// The number of emitted host machine instructions
+    pub fn machine_instruction_count(&self) -> usize {
+        self.machine_instruction_count
+    }
+
     /// The total memory used in bytes rounded up to page boundaries
     pub fn mem_size(&self) -> usize {
-        let pc_loc_table_size = 
+        let pc_loc_table_size =
             round_to_page_size(std::mem::size_of_val(self.pc_section), self.page_size);
         let code_size = round_to_page_size(self.text_section.len(), self.page_size);
         pc_loc_table_size + code_size
@@ -191,7 +199,7 @@ impl JitProgram {
 
 impl Drop for JitProgram {
     fn drop(&mut self) {
-        let pc_loc_table_size = 
+        let pc_loc_table_size =
             round_to_page_size(std::mem::size_of_val(self.pc_section), self.page_size);
         let code_size = round_to_page_size(self.text_section.len(), self.page_size);
         if pc_loc_table_size + code_size > 0 {
@@ -393,9 +401,9 @@ impl<'a, C: ContextObject> JitCompiler<'a, C> {
         debug_assert!(code_length_estimate < (i32::MAX as usize));
 
         let runtime_environment_key = get_runtime_environment_key();
-        // let runtime_environment_key:i32 = 0;
         let mut diversification_rng = SmallRng::from_rng(thread_rng()).map_err(|_| EbpfError::JitNotCompiled)?;
-        let immediate_value_key = diversification_rng.gen::<i64>();
+        // let immediate_value_key = diversification_rng.gen::<i64>();
+        let immediate_value_key = 0; // fixed value to avoid the influence of the sanitization of immediate values on the performance measurements of the JIT
 
         Ok(Self {
             result: JitProgram::new(pc, code_length_estimate)?,
@@ -1455,6 +1463,7 @@ impl<'a, C: ContextObject> JitCompiler<'a, C> {
     #[inline(always)]
     pub fn emit_ins(&mut self,instruction: RISCVInstruction) {
         self.emit(instruction.emit());
+        self.result.machine_instruction_count += 1;
     }
 
     /// Determine the offset and execute the load instruction

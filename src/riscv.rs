@@ -55,7 +55,6 @@ pub const ARGUMENT_REGISTERS: [u8; 6] = [A0, A1, A2, A3, A4, A5];
 pub const CALLER_SAVED_REGISTERS: [u8; 9] = [RA, A3, A2, A1, A0, A4, A5, A6, A7]; // a0 to a7 are caller saved
 pub const CALLEE_SAVED_REGISTERS: [u8; 6] = [S0, S1, S2, S3, S4, S5]; // s0 to s11 are callee saved
 
-
 #[derive(Debug, Clone, Copy)]
 pub enum RISCVInstructionType {
     R, //Register   funct7 rs2 rs1 funct3 rd opcode
@@ -135,8 +134,8 @@ impl RISCVInstruction {
             }
             RISCVInstructionType::S => {
                 // S type instruction (Store)
-                let imm_4_0 = (self.immediate.unwrap() & 0x1F) << 7; 
-                let imm_11_5 = (self.immediate.unwrap() & 0xFE0) << 20; 
+                let imm_4_0 = (self.immediate.unwrap() & 0x1F) << 7;
+                let imm_11_5 = (self.immediate.unwrap() & 0xFE0) << 20;
                 let rs1 = ((self.rs1.unwrap() & 0x1F) as i64) << 15;
                 let rs2 = ((self.rs2.unwrap() & 0x1F) as i64) << 20;
                 let funct3 = ((self.funct3.unwrap() & 0x07) as i64) << 12;
@@ -189,12 +188,12 @@ impl RISCVInstruction {
     pub const fn noop() -> Self {
         Self {
             inst_type: RISCVInstructionType::I,
-            opcode: 0x13, 
-            rd: Some(0),  
+            opcode: 0x13,
+            rd: Some(0),
             funct3: Some(0),
-            rs1: Some(0),           
-            immediate: Some(0),     
-            size: OperandSize::S32, 
+            rs1: Some(0),
+            immediate: Some(0),
+            size: OperandSize::S32,
             ..Self::DEFAULT
         }
     }
@@ -205,13 +204,13 @@ impl RISCVInstruction {
         // In RISC-V, the MOV operation typically uses the ADDI instruction, with the immediate value set to 0.
         exclude_operand_sizes!(size, OperandSize::S0 | OperandSize::S8 | OperandSize::S16);
         Self {
-            inst_type: RISCVInstructionType::I, 
-            opcode: 0x13,                       
-            rd: Some(destination),              
-            funct3: Some(0),                    
-            rs1: Some(source),                  
-            immediate: Some(0),                 
-            size,                              
+            inst_type: RISCVInstructionType::I,
+            opcode: 0x13,
+            rd: Some(destination),
+            funct3: Some(0),
+            rs1: Some(source),
+            immediate: Some(0),
+            size,
             ..Self::DEFAULT
         }
     }
@@ -555,7 +554,7 @@ impl RISCVInstruction {
         }
     }
 
-    /// SLLw (Shift Left Logical rd, rs1, rs2) 
+    /// SLLw (Shift Left Logical rd, rs1, rs2)
     #[inline]
     pub const fn sllw(size: OperandSize, source1: u8, source2: u8, destination: u8) -> Self {
         exclude_operand_sizes!(size, OperandSize::S0 | OperandSize::S8 | OperandSize::S16);
@@ -606,7 +605,7 @@ impl RISCVInstruction {
         }
     }
 
-    /// SRL (Shift Right Logical rd, rs1, rs2) 
+    /// SRL (Shift Right Logical rd, rs1, rs2)
     #[inline]
     pub const fn srl(size: OperandSize, source1: u8, source2: u8, destination: u8) -> Self {
         exclude_operand_sizes!(size, OperandSize::S0 | OperandSize::S8 | OperandSize::S16);
@@ -623,7 +622,7 @@ impl RISCVInstruction {
         }
     }
 
-    /// SRLW (Shift Right Logical rd, rs1, rs2) 
+    /// SRLW (Shift Right Logical rd, rs1, rs2)
     #[inline]
     pub const fn srlw(size: OperandSize, source1: u8, source2: u8, destination: u8) -> Self {
         exclude_operand_sizes!(size, OperandSize::S0 | OperandSize::S8 | OperandSize::S16);
@@ -674,7 +673,7 @@ impl RISCVInstruction {
         }
     }
 
-    /// SRA (Shift Right Arithmetic rd, rs1, rs2) 
+    /// SRA (Shift Right Arithmetic rd, rs1, rs2)
     #[inline]
     pub const fn sra(size: OperandSize, source1: u8, source2: u8, destination: u8) -> Self {
         exclude_operand_sizes!(size, OperandSize::S0 | OperandSize::S8 | OperandSize::S16);
@@ -691,7 +690,7 @@ impl RISCVInstruction {
         }
     }
 
-    /// SRAW (Shift Right Arithmetic rd, rs1, rs2) 
+    /// SRAW (Shift Right Arithmetic rd, rs1, rs2)
     #[inline]
     pub const fn sraw(size: OperandSize, source1: u8, source2: u8, destination: u8) -> Self {
         exclude_operand_sizes!(size, OperandSize::S0 | OperandSize::S8 | OperandSize::S16);
@@ -708,7 +707,7 @@ impl RISCVInstruction {
         }
     }
 
-    /// SRAI (Shift Right Arithmetic Immediate rd, rs1, imm) 
+    /// SRAI (Shift Right Arithmetic Immediate rd, rs1, imm)
     #[inline]
     pub const fn srai(size: OperandSize, source1: u8, immediate: i64, destination: u8) -> Self {
         exclude_operand_sizes!(size, OperandSize::S0 | OperandSize::S8 | OperandSize::S16);
@@ -725,7 +724,7 @@ impl RISCVInstruction {
         }
     }
 
-    /// SRAIW (Shift Right Arithmetic Immediate rd, rs1, imm) 
+    /// SRAIW (Shift Right Arithmetic Immediate rd, rs1, imm)
     #[inline]
     pub const fn sraiw(size: OperandSize, source1: u8, immediate: i64, destination: u8) -> Self {
         exclude_operand_sizes!(size, OperandSize::S0 | OperandSize::S8 | OperandSize::S16);
@@ -742,7 +741,7 @@ impl RISCVInstruction {
         }
     }
 
-    /// OR (OR rd, rs1, rs2) 
+    /// OR (OR rd, rs1, rs2)
     #[inline]
     pub const fn or(size: OperandSize, source1: u8, source2: u8, destination: u8) -> Self {
         exclude_operand_sizes!(size, OperandSize::S0 | OperandSize::S8 | OperandSize::S16);
@@ -759,7 +758,7 @@ impl RISCVInstruction {
         }
     }
 
-    /// ORI (ORI rd, rs1, imm) 
+    /// ORI (ORI rd, rs1, imm)
     #[inline]
     pub const fn ori(size: OperandSize, source1: u8, immediate: i64, destination: u8) -> Self {
         exclude_operand_sizes!(size, OperandSize::S0 | OperandSize::S8 | OperandSize::S16);
@@ -775,7 +774,7 @@ impl RISCVInstruction {
         }
     }
 
-    /// XOR (XOR rd, rs1, rs2) 
+    /// XOR (XOR rd, rs1, rs2)
     #[inline]
     pub const fn xor(size: OperandSize, source1: u8, source2: u8, destination: u8) -> Self {
         exclude_operand_sizes!(size, OperandSize::S0 | OperandSize::S8 | OperandSize::S16);
@@ -792,7 +791,7 @@ impl RISCVInstruction {
         }
     }
 
-    /// XORI (XORI rd, rs1, imm) 
+    /// XORI (XORI rd, rs1, imm)
     #[inline]
     pub const fn xori(size: OperandSize, source1: u8, immediate: i64, destination: u8) -> Self {
         exclude_operand_sizes!(size, OperandSize::S0 | OperandSize::S8 | OperandSize::S16);
@@ -808,7 +807,7 @@ impl RISCVInstruction {
         }
     }
 
-    /// AND (AND rd, rs1, rs2) 
+    /// AND (AND rd, rs1, rs2)
     #[inline]
     pub const fn and(size: OperandSize, source1: u8, source2: u8, destination: u8) -> Self {
         exclude_operand_sizes!(size, OperandSize::S0 | OperandSize::S8 | OperandSize::S16);
@@ -825,7 +824,7 @@ impl RISCVInstruction {
         }
     }
 
-    /// ANDI (ANDI rd, rs1, imm) 
+    /// ANDI (ANDI rd, rs1, imm)
     #[inline]
     pub const fn andi(size: OperandSize, source1: u8, immediate: i64, destination: u8) -> Self {
         exclude_operand_sizes!(size, OperandSize::S0 | OperandSize::S8 | OperandSize::S16);
@@ -852,9 +851,9 @@ impl RISCVInstruction {
             rd: Some(destination),
             funct3: match size {
                 OperandSize::S8 => Some(0),  //(Load Byte)
-                OperandSize::S16 => Some(1), //(Load Halfword) 
-                OperandSize::S32 => Some(2), //(Load Word) 
-                OperandSize::S64 => Some(3), //(Load DoubleWord) 
+                OperandSize::S16 => Some(1), //(Load Halfword)
+                OperandSize::S32 => Some(2), //(Load Word)
+                OperandSize::S64 => Some(3), //(Load DoubleWord)
                 _ => Some(2),
             },
             rs1: Some(source1),
@@ -873,9 +872,9 @@ impl RISCVInstruction {
             opcode: 0x23,
             funct3: match size {
                 OperandSize::S8 => Some(0),  //(Store Byte)
-                OperandSize::S16 => Some(1), //(Store Halfword) 
-                OperandSize::S32 => Some(2), //(Store Word) 
-                OperandSize::S64 => Some(3), //(Store DoubleWord) 
+                OperandSize::S16 => Some(1), //(Store Halfword)
+                OperandSize::S32 => Some(2), //(Store Word)
+                OperandSize::S64 => Some(3), //(Store DoubleWord)
                 _ => Some(2),
             },
             rs1: Some(source1),
@@ -982,7 +981,7 @@ impl RISCVInstruction {
         }
     }
 
-    /// Add imm and rs1 to destination (ADDIW rd, rs1, imm) 
+    /// Add imm and rs1 to destination (ADDIW rd, rs1, imm)
     #[inline]
     pub const fn addiw(size: OperandSize, source1: u8, immediate: i64, destination: u8) -> Self {
         exclude_operand_sizes!(

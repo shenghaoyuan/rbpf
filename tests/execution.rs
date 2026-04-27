@@ -36,7 +36,7 @@ use test_utils::{
 };
 
 // BPF_ALU32_LOAD : Arithmetic and Logic
-/*
+
 #[test]
 fn test_mov32_imm() {
     test_interpreter_and_jit_asm!(
@@ -3268,7 +3268,7 @@ fn test_capped_after_callx() {
         ProgramResult::Err(EbpfError::ExceededMaxInstructions),
     );
 }
-*/
+
 // SBPFv0 only [DEPRECATED]
 
 #[test]

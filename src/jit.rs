@@ -520,15 +520,9 @@ impl<'a, C: ContextObject> JitCompiler<'a, C> {
                 // BPF_ALU class
                 ebpf::ADD32_IMM  => {
                     self.emit_sanitized_add(OperandSize::S32, dst, insn.imm as i32 as i64);
-                    if !self.executable.get_sbpf_version().explicit_sign_extension_of_results() {
-                        self.sign_extend(dst);
-                    }
                 }
                 ebpf::ADD32_REG  => {
                     self.emit_ins(RISCVInstruction::addw(OperandSize::S32, src, dst, dst));
-                    if !self.executable.get_sbpf_version().explicit_sign_extension_of_results() {
-                        self.sign_extend(dst);
-                    }
                 }
                 ebpf::SUB32_IMM  => {
                     if self.executable.get_sbpf_version().swap_sub_reg_imm_operands() {
@@ -539,15 +533,9 @@ impl<'a, C: ContextObject> JitCompiler<'a, C> {
                     } else {
                         self.emit_sanitized_sub(OperandSize::S32, dst, insn.imm as i32 as i64);
                     }
-                    if !self.executable.get_sbpf_version().explicit_sign_extension_of_results() {
-                        self.sign_extend(dst);
-                    }
                 }
                 ebpf::SUB32_REG  => {
                     self.emit_ins(RISCVInstruction::subw(OperandSize::S32, dst, src, dst));
-                    if !self.executable.get_sbpf_version().explicit_sign_extension_of_results() {
-                        self.sign_extend(dst);
-                    }
                 }
                 ebpf::MUL32_IMM if !self.executable.get_sbpf_version().enable_pqr() => {
                     if self.should_sanitize_constant(insn.imm) {
@@ -556,9 +544,6 @@ impl<'a, C: ContextObject> JitCompiler<'a, C> {
                         self.load_immediate(OperandSize::S32, REGISTER_SCRATCH, insn.imm);
                     }
                     self.emit_ins(RISCVInstruction::mulw(OperandSize::S32, dst, REGISTER_SCRATCH, dst));
-                    if !self.executable.get_sbpf_version().explicit_sign_extension_of_results() {
-                        self.sign_extend(dst);
-                    }
                 }
                 ebpf::DIV32_IMM if !self.executable.get_sbpf_version().enable_pqr() => {
                     self.load_immediate(OperandSize::S32, T1, insn.imm);
@@ -577,9 +562,6 @@ impl<'a, C: ContextObject> JitCompiler<'a, C> {
                 },
                 ebpf::MUL32_REG if !self.executable.get_sbpf_version().enable_pqr() => {
                     self.emit_ins(RISCVInstruction::mulw(OperandSize::S32, dst, src, dst));
-                    if !self.executable.get_sbpf_version().explicit_sign_extension_of_results() {
-                        self.sign_extend(dst);
-                    }
                 }
                 ebpf::DIV32_REG if !self.executable.get_sbpf_version().enable_pqr() => {
                     self.div_err_handle(OperandSize::S32, false, src, dst);
@@ -849,8 +831,7 @@ impl<'a, C: ContextObject> JitCompiler<'a, C> {
 
                 // BPF_PQR class
                 ebpf::LMUL32_IMM if self.executable.get_sbpf_version().enable_pqr() => {
-                    self.load_immediate(OperandSize::S32, T1, insn.imm);
-                    self.zero_extend(T1);
+                    self.load_immediate(OperandSize::S32, T1, insn.imm as u32 as i64);
                     self.emit_ins(RISCVInstruction::mulw(OperandSize::S32, dst, T1, dst));
                     self.zero_extend(dst);
                 }
@@ -1105,7 +1086,6 @@ impl<'a, C: ContextObject> JitCompiler<'a, C> {
                 ebpf::JSGT32_IMM if self.executable.get_sbpf_version().enable_jmp32()   => {
                     self.emit_validate_and_profile_instruction_count(Some(target_pc));
                     self.load_immediate(OperandSize::S64, T1, insn.imm as i32 as i64);
-                    self.zero_extend(dst);
                     self.emit_ins(RISCVInstruction::addiw(OperandSize::S64, dst, 0, dst)); // sign extend dst
                     self.load_immediate(OperandSize::S64, REGISTER_SCRATCH, target_pc as i64);
                     let jump_offset = self.relative_to_target_pc(target_pc, 0);
@@ -1125,7 +1105,6 @@ impl<'a, C: ContextObject> JitCompiler<'a, C> {
                 ebpf::JSGE32_IMM if self.executable.get_sbpf_version().enable_jmp32()   => {
                     self.emit_validate_and_profile_instruction_count(Some(target_pc));
                     self.load_immediate(OperandSize::S64, T1, insn.imm as i32 as i64);
-                    self.zero_extend(dst);
                     self.emit_ins(RISCVInstruction::addiw(OperandSize::S64, dst, 0, dst)); // sign extend dst
                     self.load_immediate(OperandSize::S64, REGISTER_SCRATCH, target_pc as i64);
                     let jump_offset = self.relative_to_target_pc(target_pc, 0);
@@ -1145,7 +1124,6 @@ impl<'a, C: ContextObject> JitCompiler<'a, C> {
                 ebpf::JSLT32_IMM if self.executable.get_sbpf_version().enable_jmp32()    => {
                     self.emit_validate_and_profile_instruction_count(Some(target_pc));
                     self.load_immediate(OperandSize::S64, T1, insn.imm as i32 as i64);
-                    self.zero_extend(dst);
                     self.emit_ins(RISCVInstruction::addiw(OperandSize::S64, dst, 0, dst)); // sign extend dst
                     self.load_immediate(OperandSize::S64, REGISTER_SCRATCH, target_pc as i64);
                     let jump_offset = self.relative_to_target_pc(target_pc, 0);
@@ -1165,7 +1143,6 @@ impl<'a, C: ContextObject> JitCompiler<'a, C> {
                 ebpf::JSLE32_IMM if self.executable.get_sbpf_version().enable_jmp32()    => {
                     self.emit_validate_and_profile_instruction_count(Some(target_pc));
                     self.load_immediate(OperandSize::S64, T1, insn.imm as i32 as i64);
-                    self.zero_extend(dst);
                     self.emit_ins(RISCVInstruction::addiw(OperandSize::S64, dst, 0, dst)); // sign extend dst
                     self.load_immediate(OperandSize::S64, REGISTER_SCRATCH, target_pc as i64);
                     let jump_offset = self.relative_to_target_pc(target_pc, 0);
@@ -1494,11 +1471,6 @@ impl<'a, C: ContextObject> JitCompiler<'a, C> {
     pub fn zero_extend(&mut self,destination: u8) {
         self.emit_ins(RISCVInstruction::slli(OperandSize::S64, destination, 32, destination));
         self.emit_ins(RISCVInstruction::srli(OperandSize::S64, destination, 32, destination));
-    }
-
-    /// sign-extend
-    pub fn sign_extend(&mut self,destination: u8) {
-        self.emit_ins(RISCVInstruction::addiw(OperandSize::S64, destination, 0, destination));
     }
 
     /// Divide the immediate number into the high 20 bits and the low 12 bits
@@ -1858,21 +1830,15 @@ impl<'a, C: ContextObject> JitCompiler<'a, C> {
                 _ => unreachable!(),
             }
         } else {
-            // Save REGISTER_MAP[0] and retrieve value to store
+            // use temporary reg T5 to optimize the workload
             self.load(OperandSize::S64, SP, stack_slot_of_value_to_store, T5);
-            self.store(OperandSize::S64, SP, T5, stack_slot_of_value_to_store);
-            self.emit_ins(RISCVInstruction::mov(OperandSize::S64, T5, REGISTER_MAP[0]));
             match len {
-                1 => self.store(OperandSize::S8, REGISTER_MAP[0], REGISTER_SCRATCH, 0),
-                2 => self.store(OperandSize::S16, REGISTER_MAP[0], REGISTER_SCRATCH, 0),
-                4 => self.store(OperandSize::S32, REGISTER_MAP[0], REGISTER_SCRATCH, 0),
-                8 => self.store(OperandSize::S64, REGISTER_MAP[0], REGISTER_SCRATCH, 0),
+                1 => self.store(OperandSize::S8, T5, REGISTER_SCRATCH, 0),
+                2 => self.store(OperandSize::S16, T5, REGISTER_SCRATCH, 0),
+                4 => self.store(OperandSize::S32, T5, REGISTER_SCRATCH, 0),
+                8 => self.store(OperandSize::S64, T5, REGISTER_SCRATCH, 0),
                 _ => unreachable!(),
             }
-            // Restore REGISTER_MAP[0]
-            self.load(OperandSize::S64, SP, stack_slot_of_value_to_store, T5);
-            self.store(OperandSize::S64, SP, T5, stack_slot_of_value_to_store);
-            self.emit_ins(RISCVInstruction::mov(OperandSize::S64, T5, REGISTER_MAP[0]));
         }
     }
 
@@ -2111,10 +2077,8 @@ impl<'a, C: ContextObject> JitCompiler<'a, C> {
         self.emit_ins(RISCVInstruction::addi(OperandSize::S64, REGISTER_INSTRUCTION_METER, -1, REGISTER_INSTRUCTION_METER)); // instruction_meter -= 1;
         self.emit_ins(RISCVInstruction::add(OperandSize::S64, REGISTER_INSTRUCTION_METER, REGISTER_SCRATCH, REGISTER_INSTRUCTION_METER)); // instruction_meter += guest_target_pc;
         // Offset host_target_address by self.result.text_section
-        self.emit_ins(RISCVInstruction::mov(OperandSize::S64, REGISTER_SCRATCH, T5));
-        self.load_immediate(OperandSize::S64, REGISTER_SCRATCH, self.result.text_section.as_ptr() as i64); // REGISTER_SCRATCH = self.result.text_section;
-        self.emit_ins(RISCVInstruction::add(OperandSize::S64, REGISTER_MAP[0], REGISTER_SCRATCH, REGISTER_MAP[0])); // host_target_address += self.result.text_section;
-        self.emit_ins(RISCVInstruction::mov(OperandSize::S64, T5, REGISTER_SCRATCH));
+        self.load_immediate(OperandSize::S64, T5, self.result.text_section.as_ptr() as i64);          // REGISTER_SCRATCH = self.result.text_section;
+        self.emit_ins(RISCVInstruction::add(OperandSize::S64, REGISTER_MAP[0], T5, REGISTER_MAP[0])); // host_target_address += self.result.text_section;
         // Restore the clobbered REGISTER_MAP[0]
         self.load(OperandSize::S64, SP, 0, T5);
         self.store(OperandSize::S64, SP, REGISTER_MAP[0], 0);
@@ -2313,20 +2277,12 @@ impl<'a, C: ContextObject> JitCompiler<'a, C> {
         }
         match target {
             Value::Register(reg) => {
-                self.emit_ins(RISCVInstruction::addi(OperandSize::S64, SP, -8, SP));
-                self.store(OperandSize::S64, SP, RA, 0);
                 self.emit_ins(RISCVInstruction::jalr(reg, 0, RA));
-                self.load(OperandSize::S64, SP, 0, RA);
-                self.emit_ins(RISCVInstruction::addi(OperandSize::S64, SP, 8, SP));
             },
             Value::Constant64(value, user_provided) => {
                 debug_assert!(!user_provided);
                 self.load_immediate(OperandSize::S64, T1, value);
-                self.emit_ins(RISCVInstruction::addi(OperandSize::S64, SP, -8, SP));
-                self.store(OperandSize::S64, SP, RA, 0);
                 self.emit_ins(RISCVInstruction::jalr(T1, 0, RA));
-                self.load(OperandSize::S64, SP, 0, RA);
-                self.emit_ins(RISCVInstruction::addi(OperandSize::S64, SP, 8, SP));
             },
             _ => {
                 #[cfg(debug_assertions)]

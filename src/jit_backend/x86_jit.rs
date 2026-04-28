@@ -226,6 +226,9 @@ pub(crate) fn emit_sanitized_add<C: ContextObject>(
     immediate: i64,
 ) {
     emit_sanitized_alu(jit, size, 0x01, 0, destination, immediate);
+    if size == OperandSize::S32 && !jit.executable.get_sbpf_version().explicit_sign_extension_of_results() {
+        sign_extend(jit, destination); // sign extend i32 to i64
+    }
 }
 
 pub(crate) fn emit_or_imm<C: ContextObject>(
@@ -407,6 +410,9 @@ pub(crate) fn emit_add_reg<C: ContextObject>(
     src: u8,
 ) {
     emit_ins(jit, X86Instruction::alu(size, 0x01, src, dst, None));
+    if size == OperandSize::S32 && !jit.executable.get_sbpf_version().explicit_sign_extension_of_results() {
+        sign_extend(jit, dst); // sign extend i32 to i64
+    }
 }
 
 pub(crate) fn emit_mov_reg<C: ContextObject>(

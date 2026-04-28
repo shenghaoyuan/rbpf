@@ -458,15 +458,9 @@ impl<'a, C: ContextObject> JitCompiler<'a, C> {
                 // BPF_ALU class
                 ebpf::ADD32_IMM  => {
                     emit_sanitized_add(&mut self,OperandSize::S32, dst, insn.imm);
-                    if !self.executable.get_sbpf_version().explicit_sign_extension_of_results() {
-                        sign_extend(&mut self, dst);
-                    }
                 }
                 ebpf::ADD32_REG  => {
                     emit_add_reg(&mut self, OperandSize::S32, dst, src);
-                    if !self.executable.get_sbpf_version().explicit_sign_extension_of_results() {
-                        sign_extend(&mut self, dst);
-                    }
                 }
                 ebpf::SUB32_IMM  => {
                     emit_sub_imm(&mut self, OperandSize::S32, dst, insn.imm);
